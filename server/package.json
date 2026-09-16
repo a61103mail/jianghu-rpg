@@ -1,0 +1,16 @@
+{
+  "name": "jianghu-rpg-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch-path=./index.js --watch-path=./db.js --watch-path=./routes --watch-path=./engine --watch-path=./data index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "jsonwebtoken": "^9.0.2",
+    "socket.io": "^4.7.5"
+  }
+}

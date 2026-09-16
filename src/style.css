@@ -1,0 +1,184 @@
+:root {
+  --bg: #16140f;
+  --panel: #1f1b14;
+  --panel-border: #5a4a2f;
+  --ink: #e8dfc8;
+  --ink-dim: #a89b7c;
+  --accent: #c9a227;
+  --accent-dim: #7a5f14;
+  --danger: #a83232;
+  --success: #3f7a4a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Microsoft JhengHei", "PMingLiU", serif;
+  min-height: 100vh;
+}
+
+#app {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 12px;
+}
+
+/* 多欄版面:讓同一畫面內互不相關的區塊並排顯示,減少整頁要一直往下滾的問題。
+   窄螢幕(<960px)自動收合成單欄,避免內容被擠壓。 */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-items: start; }
+.grid-2 > .panel, .grid-3 > .panel { margin-bottom: 0; }
+@media (max-width: 960px) {
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+.btn {
+  background: #2a2418;
+  color: var(--ink);
+  border: 1px solid var(--accent-dim);
+  border-radius: 4px;
+  padding: 7px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  margin: 3px 5px 3px 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+.btn:hover { border-color: var(--accent); background: #362e1c; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.primary { border-color: var(--accent); background: #3a2f14; }
+.btn.danger { border-color: var(--danger); color: #ffb3b3; }
+
+/* 技能欄:戰鬥中最重要的操作,故意跟一般按鈕(脫身、上架交易所等)拉開明顯的視覺差異——
+   更大、更粗的邊框、有底色與陰影,一眼就能認出「這是我的招式」。 */
+.skill-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: #2a1f10;
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px;
+  margin: 10px 0;
+}
+.skill-btn {
+  background: #3a2f14;
+  color: var(--ink);
+  border: 2px solid var(--accent);
+  border-radius: 6px;
+  padding: 12px 18px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+  transition: transform 0.1s, background 0.15s;
+}
+.skill-btn:hover { background: #4a3d1c; transform: translateY(-1px); }
+.skill-btn.locked { background: #241f16; border-color: var(--panel-border); color: var(--ink-dim); font-weight: normal; cursor: not-allowed; box-shadow: none; }
+.skill-btn.attack { border-color: #c94b4b; }
+.skill-btn.attack:hover { background: #4a2020; }
+
+/* 技能欄內部分排:單體/範圍/BUFF 各自一排,避免全部擠在同一排分不清楚 */
+.skill-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.skill-row-label { min-width: 40px; color: var(--ink-dim); font-size: 13px; font-weight: bold; }
+
+.choice-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.choice-btn {
+  text-align: left;
+  background: #241f16;
+  border: 1px solid var(--panel-border);
+  color: var(--ink);
+  padding: 12px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 15px;
+}
+.choice-btn:hover { border-color: var(--accent); background: #302a1a; }
+
+.narrative-text {
+  line-height: 1.6;
+  font-size: 15px;
+  white-space: pre-wrap;
+}
+
+.top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px;
+  font-size: 13px;
+}
+.stat-grid div { background: #241f16; padding: 5px 7px; border-radius: 4px; }
+.stat-grid b { color: var(--accent); }
+
+.bar-bg { background: #241f16; border: 1px solid var(--panel-border); border-radius: 4px; height: 18px; overflow: hidden; position: relative; }
+.bar-fill { height: 100%; transition: width 0.3s; }
+.bar-fill.hp { background: linear-gradient(90deg, #7a2020, #c94b4b); }
+.bar-fill.qi, .bar-fill.mp { background: linear-gradient(90deg, #205a7a, #4bb0c9); }
+.bar-fill.enemy { background: linear-gradient(90deg, #5a2020, #a83232); }
+.bar-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; text-shadow: 0 1px 2px #000; }
+
+.nav-tabs { display: flex; gap: 5px; margin-bottom: 10px; flex-wrap: wrap; }
+.nav-tabs button { flex: none; }
+.nav-tabs button.active { border-color: var(--accent); background: #3a2f14; }
+
+.log-list { height: 200px; max-height: 200px; overflow-y: auto; font-size: 13px; color: var(--ink-dim); display: flex; flex-direction: column-reverse; gap: 3px; min-height: 0; flex-shrink: 0; }
+
+.item-card { background: #241f16; border: 1px solid var(--panel-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; font-size: 14px; }
+.item-card.rarity-common { color: #b0b0b0; }
+.item-card.rarity-rare { color: #a855f7; }
+.item-card.rarity-epic { color: #f59e0b; }
+
+/* 卡片式列表(地圖、配方、裝備清單等)改用自動換行的多欄網格,取代單欄一路往下排列 */
+.card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.card-grid > .item-card { margin-bottom: 0; }
+
+.stat-alloc-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.stat-alloc-row span { min-width: 90px; }
+
+.error-msg { color: #ff8080; margin: 8px 0; }
+.hint { color: var(--ink-dim); font-size: 13px; }
+
+input[type="text"], input[type="password"] {
+  background: #241f16;
+  border: 1px solid var(--panel-border);
+  color: var(--ink);
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 15px;
+  margin: 4px 0;
+  width: 100%;
+  max-width: 260px;
+}
+
+.system-card {
+  background: #241f16;
+  border: 2px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 14px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.system-card:hover { border-color: var(--accent); }
+.system-card h3 { margin-bottom: 4px; }
+.system-card .tagline { color: var(--accent); font-style: italic; margin-bottom: 6px; }

@@ -1,0 +1,18 @@
+# 依賴套件(部署平台會自己重新安裝,不需要放進版本控制)
+node_modules/
+
+# 前端打包產物(部署時會自動重新建置)
+dist/
+
+# 遊戲存檔資料庫(不該進版本控制——這是玩家資料,不是程式碼;
+# 部署到 Render 等平台時,這個檔案本來就會在每次重新部署時被重置,詳見 DEPLOY.md 的說明)
+server/jianghu.db
+
+# 本機測試/通道用的暫存檔案,跟遊戲程式碼無關
+tunnel-url.txt
+tunnel-watchdog.log
+
+# 編輯器/系統雜項
+.vscode/
+.DS_Store
+Thumbs.db
