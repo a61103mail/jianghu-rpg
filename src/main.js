@@ -71,13 +71,23 @@ function h(tag, attrs = {}, children = []) {
 // (scrollNodes)」。#app 本身鎖死在 100dvh(視窗高度)且不開放整頁捲動,所以捲軸只會出現在
 // .screen-scroll 這個區塊內、且高度是 flex 算出來的「視窗剩餘空間」而非寫死的像素值——不論使用者
 // 螢幕解析度多大多小,標題列與操作按鈕永遠留在原位,不會被一路往下的內容推到畫面外。
+//
+// 保留捲動位置:每次 render() 都會整個 innerHTML='' 重建 DOM(沒有用虛擬DOM diff),先前每次戰鬥
+// 動作後畫面都會被重設回最頂端——玩家在戰鬥中得「捲下去點技能→點完畫面跳回頂端→再捲下去」不斷重複,
+// 非常擾民。這裡在重建前先記下舊的捲動位置,重建後立刻還原,同一畫面連續操作(例如戰鬥回合)才不會
+// 每次都跳回頂端。
 function mount(headerNodes, scrollNodes) {
+  const prevScroll = document.querySelector('.screen-scroll');
+  const scrollTop = prevScroll ? prevScroll.scrollTop : 0;
+
   const root = document.createElement('div');
   root.style.cssText = 'display:flex;flex-direction:column;height:100%;min-height:0;';
   (headerNodes || []).forEach((n) => { if (n) root.appendChild(n); });
-  root.appendChild(h('div', { class: 'screen-scroll' }, (scrollNodes || []).filter((n) => n)));
+  const scrollBox = h('div', { class: 'screen-scroll' }, (scrollNodes || []).filter((n) => n));
+  root.appendChild(scrollBox);
   app.innerHTML = '';
   app.appendChild(root);
+  scrollBox.scrollTop = scrollTop;
 }
 
 async function refreshState() {
@@ -133,6 +143,16 @@ function navBtn(view, label) {
     class: `btn${S.view === view ? ' active' : ''}`,
     onclick: () => { if (view === 'auction') { openAuction(); } else { S.view = view; render(); } },
   }, label);
+}
+
+// 戰鬥中專用的精簡標題列:只留角色識別(帳號/職業/等級),不重複顯示氣血真力(戰鬥面板本身就有,
+// 顯示兩次沒意義)、不顯示完整9項屬性、不顯示導覽按鈕(戰鬥中本來就不該切去別的畫面)。
+// 目的是把每回合都要操作的技能按鈕盡量往上推,減少甚至消除戰鬥中還要捲動畫面的情況。
+function combatTopBar() {
+  const s = S.state;
+  return h('div', { class: 'panel', style: 'padding:6px 14px;' }, [
+    h('div', { class: 'hint' }, `${S.username || ''} · ${s.className} · Lv.${s.level}`),
+  ]);
 }
 
 // ---- 認證畫面 ----
@@ -365,7 +385,9 @@ function renderVenture() {
   } else if (s.activeVenture) {
     content = [renderVentureProgress(), renderVentureStagePanel()];
   }
-  mount([topBar()], [...content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  // 戰鬥中改用精簡標題列(見 combatTopBar 說明):完整屬性列跟導覽按鈕在這裡不需要,
+  // 省下的空間讓技能按鈕盡量不用捲動就能點到,不會每打一回合就被畫面重繪推回頂端又要捲一次。
+  mount([s.activeCombat ? combatTopBar() : topBar()], [...content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 function renderVentureProgress() {
@@ -487,25 +509,27 @@ function renderCombatPanel() {
   const mpPct = Math.round((c.playerMp / c.playerMaxMp) * 100);
   const aliveCount = c.enemies.filter((e) => e.hp > 0).length;
   return h('div', { class: 'panel' }, [
-    h('h3', c.isBossFight ? { style: 'color:#ef4444;' } : {}, c.isBossFight ? `⚠ ${c.bossKind === 'boss' ? '大王' : '小王'}戰!` : '遭遇戰!'),
+    h('h3', { style: c.isBossFight ? 'color:#ef4444;margin-bottom:4px;' : 'margin-bottom:4px;' }, c.isBossFight ? `⚠ ${c.bossKind === 'boss' ? '大王' : '小王'}戰!` : '遭遇戰!'),
     ...c.enemies.map((e, idx) => {
       const pct = Math.round((e.hp / e.maxHp) * 100);
       return h('div', { style: 'margin-bottom:6px;' }, [
         h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill enemy', style: `width:${pct}%` }), h('div', { class: 'bar-label' }, `${e.name}(Lv.${e.level}) ${e.hp}/${e.maxHp}`)]),
       ]);
     }),
-    h('div', { style: 'height:8px' }),
+    h('div', { style: 'height:4px' }),
     h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${playerPct}%` }), h('div', { class: 'bar-label' }, `你 ${c.playerHp}/${c.playerMaxHp}`)]),
     h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill mp', style: `width:${mpPct}%` }), h('div', { class: 'bar-label' }, `真力 ${c.playerMp}/${c.playerMaxMp}`)]),
     h('div', {
       class: 'log-list',
-      style: 'margin-top:12px;',
+      style: 'margin-top:8px;height:clamp(70px,12vh,140px);max-height:clamp(70px,12vh,140px);',
     }, c.log.map((l) => h('div', { class: l.includes('⚠') ? 'log-telegraph' : l.includes('💥') ? 'log-impact' : '' }, l))),
 
-    // 技能欄:分排顯示——第一排單體攻擊、第二排範圍技能、第三排BUFF、第四排防禦,不要全部擠在同一排
-    h('h3', { style: 'margin-top:14px;font-size:15px;' }, '⚔ 技能'),
-    h('p', { class: 'hint', style: 'margin:2px 0 6px;' }, '傷害為未扣敵方防禦、未計會心的預估區間,實際命中會依對象浮動。看到⚠警示代表敵人正在蓄力,考慮這回合防禦!'),
-    h('div', { class: 'skill-bar', style: 'flex-direction:column;align-items:stretch;' }, [
+    // 技能欄:分排顯示——第一排單體攻擊、第二排範圍技能、第三排BUFF、第四排防禦,不要全部擠在同一排。
+    // 傷害計算方式的說明移到滑鼠提示(title),畫面上只留下每回合真的需要看的警示文字,
+    // 減少戰鬥中每回合都要重新掃過的文字量,技能按鈕才能盡量往上、不用捲動就點得到。
+    h('h3', { style: 'margin-top:8px;font-size:15px;', title: '傷害為未扣敵方防禦、未計會心的預估區間,實際命中會依對象浮動。' }, '⚔ 技能'),
+    c.log.some((l) => l.includes('⚠')) ? h('p', { class: 'hint log-telegraph', style: 'margin:2px 0 6px;' }, '⚠ 敵人正在蓄力,考慮這回合防禦!') : null,
+    h('div', { class: 'skill-bar', style: 'flex-direction:column;align-items:stretch;margin-top:4px;' }, [
       h('div', { class: 'skill-row' }, [
         h('span', { class: 'skill-row-label' }, '單體'),
         ...c.enemies.map((e, idx) => e.hp > 0
@@ -912,7 +936,9 @@ function renderParty() {
     ]),
     S.party?.combat ? renderPartyCombat(S.party.combat) : null,
   ]);
-  mount([topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  // 副本戰鬥中也改用精簡標題列,理由同單人戰鬥(見 combatTopBar)——同樣每回合都要點技能,
+  // 不該每次都被完整屬性列+導覽按鈕擠壓掉空間。
+  mount([S.party?.combat ? combatTopBar() : topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 function renderPartyCombat(combat) {
@@ -1018,7 +1044,8 @@ function renderDuel() {
     ]) : renderDuelCombat(),
     S.duelMsg ? h('div', { class: 'error-msg' }, S.duelMsg) : null,
   ]);
-  mount([topBar()], [panel]);
+  // 決鬥進行中同樣改用精簡標題列,理由同單人戰鬥/組隊副本
+  mount([S.duel ? combatTopBar() : topBar()], [panel]);
 }
 
 function renderDuelCombat() {
