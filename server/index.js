@@ -14,7 +14,7 @@ import { exportSnapshot, importSnapshotIfEmpty } from './backup.js';
 import { computeStats, addLog, checkLevelUp } from './engine/characterEngine.js';
 import { depositFallenLoot } from './engine/fallenLootEngine.js';
 import { generateCommonGear } from './engine/itemEngine.js';
-import { getItem, getPotion } from './data/itemData.js';
+import { getItem, getPotion, getEnhanceItem } from './data/itemData.js';
 import {
   createParty,
   getParty,
@@ -232,13 +232,22 @@ io.on('connection', (socket) => {
         memberSave.exp += result.totalExp;
         const leveledTo = checkLevelUp(memberSave);
         const drops = [];
-        // 每位成員各自獨立擲骰所有已擊敗敵人的掉落表——不用搶最後一擊,人人依機率各自判定
+        // 每位成員各自獨立擲骰所有已擊敗敵人的掉落表——不用搶最後一擊,人人依機率各自判定。
+        // 卷軸/方塊屬於強化消耗品,要存進 save.consumables(跟單人戰鬥 game.js 的邏輯一致),
+        // 不能跟一般材料混在一起存進 save.materials——先前這裡沒有區分,王掉的卷軸/方塊會被
+        // 誤存進 materials,材料介面完全沒有對應分類可顯示,形同憑空消失、也無法拿去強化裝備。
         result.defeatedDropTables.forEach(({ dropTable, tier, level }) => {
           (dropTable || []).forEach((d) => {
             if (Math.random() < d.chance) {
               const amt = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
-              memberSave.materials[d.id] = (memberSave.materials[d.id] || 0) + amt;
-              drops.push(`${getItem(d.id)?.name || d.id} x${amt}`);
+              const enhanceItem = getEnhanceItem(d.id);
+              if (enhanceItem) {
+                memberSave.consumables[d.id] = (memberSave.consumables[d.id] || 0) + amt;
+                drops.push(`${enhanceItem.name} x${amt}`);
+              } else {
+                memberSave.materials[d.id] = (memberSave.materials[d.id] || 0) + amt;
+                drops.push(`${getItem(d.id)?.name || d.id} x${amt}`);
+              }
             }
           });
           const gearChance = tier === 'boss' ? 0.35 : tier === 'miniboss' ? 0.25 : 0.12;

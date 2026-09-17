@@ -677,7 +677,7 @@ function renderEnhanceControls(item) {
   ]);
 }
 
-const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)' };
+const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)', party_material: '組隊限定素材(僅組隊副本擊敗大王掉落)' };
 
 function renderInventory() {
   const s = S.state;
@@ -695,7 +695,7 @@ function renderInventory() {
   ]);
 
   // 材料/雜物清單:先前只有雜貨店能看到「雜物」,製作素材/稀有素材完全沒地方顯示,身上到底有什麼完全看不到
-  const materialGroups = { junk: [], material: [], rare_material: [] };
+  const materialGroups = { junk: [], material: [], rare_material: [], party_material: [] };
   s.materials.forEach((m) => { if (materialGroups[m.kind]) materialGroups[m.kind].push(m); });
   const materialsPanel = h('div', { class: 'panel' }, [
     h('h3', {}, '材料 / 雜物'),
@@ -820,7 +820,7 @@ function renderShop() {
     )));
 
     panel.appendChild(h('h3', { style: 'margin-top:14px;' }, '回收雜物/素材(依全服庫存量動態計價;製作素材要留著做裝備還是賣錢由你決定)'));
-    const mySellables = S.state.materials.filter((m) => m.kind === 'junk' || m.kind === 'material' || m.kind === 'rare_material');
+    const mySellables = S.state.materials.filter((m) => ['junk', 'material', 'rare_material', 'party_material'].includes(m.kind));
     if (mySellables.length === 0) panel.appendChild(h('div', { class: 'hint' }, '身上沒有可回收的雜物或素材。'));
     const doSell = async (itemId, qty) => {
       try {
@@ -831,11 +831,13 @@ function renderShop() {
         render();
       } catch (e) { S.error = e.message; render(); }
     };
+    // 各素材種類的簡短提示文字(不含雜物,雜物不用額外標示種類)
+    const KIND_HINT_ZH = { rare_material: '稀有素材', material: '製作素材', party_material: '組隊限定' };
     panel.appendChild(h('div', { class: 'card-grid list-scroll' }, mySellables.map((m) => {
       const marketInfo = data.market.sellables.find((j) => j.id === m.id);
       const qtyInputId = `sell-qty-${m.id}`;
       return h('div', { class: 'item-card' }, [
-        h('div', {}, `${m.name}${m.kind !== 'junk' ? `(${m.kind === 'rare_material' ? '稀有素材' : '製作素材'})` : ''} x${m.count}(單價 ${marketInfo?.currentPrice ?? '?'})`),
+        h('div', {}, `${m.name}${m.kind !== 'junk' ? `(${KIND_HINT_ZH[m.kind] || '製作素材'})` : ''} x${m.count}(單價 ${marketInfo?.currentPrice ?? '?'})`),
         h('div', { style: 'margin-top:4px;' }, [
           h('input', { type: 'number', id: qtyInputId, min: '1', max: String(m.count), value: String(m.count), style: 'width:70px;display:inline-block;margin-right:4px;' }),
           h('button', {

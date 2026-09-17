@@ -853,7 +853,7 @@ export default function gameRoutes() {
       return res.json({ state: publicState(save), earned: price });
     }
     const item = getItem(itemId);
-    if (!item || !['junk', 'material', 'rare_material'].includes(item.kind)) return res.status(400).json({ error: '此物品無法回收' });
+    if (!item || !['junk', 'material', 'rare_material', 'party_material'].includes(item.kind)) return res.status(400).json({ error: '此物品無法回收' });
     const have = save.materials[itemId] || 0;
     const sellQty = Math.min(Math.max(1, qty || 1), have);
     if (sellQty <= 0) return res.status(400).json({ error: '數量不足' });

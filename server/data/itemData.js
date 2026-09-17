@@ -32,6 +32,11 @@ export const ITEMS = {
   drake_scale: { id: 'drake_scale', name: '龍鱗', kind: 'rare_material', shop: 'church', basePrice: 120 },
   knight_emblem: { id: 'knight_emblem', name: '騎士徽章', kind: 'rare_material', shop: 'blacksmith', basePrice: 160 },
   king_crown_shard: { id: 'king_crown_shard', name: '王冠碎片', kind: 'rare_material', shop: 'church', basePrice: 220 },
+
+  // ---- 組隊限定素材(僅組隊副本擊敗大王才有機率掉落,單人闖蕩/決鬥完全不會出現)----
+  // 一個人刷不到,逼玩家真的要湊隊伍打組隊副本才能取得,用來把「超稀有」裝備配方(EPIC_TIER_BOSS_MATS)
+  // 從單純「刷完全部單人大王」再往上加一道「你也要真的組隊打過王」的門檻,讓組隊本身有不可取代的價值。
+  party_seal: { id: 'party_seal', name: '團隊戰印', kind: 'party_material', basePrice: 150 },
 };
 
 export function getItem(id) {
@@ -64,6 +69,7 @@ const RARE_TIER_BOSS_MATS = { slime_core: 1, boar_fang: 1 }; // 第一章(新手
 const EPIC_TIER_BOSS_MATS = {
   captain_insignia: 1, chieftain_totem: 1, spider_silk_gland: 1, golem_core: 1,
   witch_charm: 1, drake_scale: 1, knight_emblem: 1, king_crown_shard: 1,
+  party_seal: 2, // 額外要求組隊限定素材——超稀有裝備不能只靠單刷全部大王湊齊,也要真的組過隊打贏王
 }; // 第二~五章剩下全部小王+大王,超稀有階代表「打完整個遊戲」的終極門檻
 const TIER_STATS = {
   common: { weaponAtk: 20, armorDef: 14, armorHp: 46, accCritPct: 2.8, accHp: 28, accDex: 14 },

@@ -61,6 +61,8 @@ export const MONSTERS = {
       { id: 'boar_hide', kind: 'junk', chance: 1, min: 4, max: 8 },
       ...BOSS_ENHANCE_DROPS,
     ],
+    // 組隊限定加成掉落:只有在組隊副本擊敗這隻王才有機會拿到,單人闖蕩/決鬥不會出現(見 partyEngine.js)
+    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
 
   // ---- 哥布林森林(Lv5~12) ----
@@ -99,6 +101,7 @@ export const MONSTERS = {
       { id: 'goblin_bow_string', kind: 'junk', chance: 1, min: 5, max: 9 },
       ...BOSS_ENHANCE_DROPS,
     ],
+    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
 
   // ---- 石化礦坑(Lv10~18) ----
@@ -137,6 +140,7 @@ export const MONSTERS = {
       { id: 'rat_tail', kind: 'junk', chance: 1, min: 6, max: 10 },
       ...BOSS_ENHANCE_DROPS,
     ],
+    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
 
   // ---- 幽暗沼澤(Lv16~24) ----
@@ -175,6 +179,7 @@ export const MONSTERS = {
       { id: 'toad_venom_sac', kind: 'junk', chance: 1, min: 7, max: 11 },
       ...BOSS_ENHANCE_DROPS,
     ],
+    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
 
   // ---- 遺跡邊境(Lv22~30) ----
@@ -213,6 +218,7 @@ export const MONSTERS = {
       { id: 'shadow_fragment', kind: 'junk', chance: 1, min: 8, max: 12 },
       ...BOSS_ENHANCE_DROPS,
     ],
+    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
 };
 

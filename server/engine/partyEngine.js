@@ -79,6 +79,8 @@ function instantiatePartyEnemy(monsterId) {
   const m = getMonster(monsterId);
   return {
     monsterId: m.id, name: m.name, level: m.level, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, critRate: m.critRate, exp: m.exp, tier: m.tier || 'normal', dropTable: m.dropTable,
+    // 組隊限定加成掉落(團隊戰印等):只有在組隊副本擊敗大王才會有機會拿到,solo/單人戰鬥不會出現這個欄位
+    partyBonusDrop: m.partyBonusDrop || null,
     physicalResistPct: m.physicalResistPct || 0,
     magicResistPct: m.magicResistPct || 0,
     enrageHpPct: m.enrageHpPct ?? null,
@@ -95,19 +97,44 @@ function trashWaveCount(partySize) {
   return Math.min(6, partySize + 1);
 }
 
+// 王波的規模設計:你都組隊了,王卻只有一個人在打,人越多反而越無腦——不加以調整的話,
+// 4人隊伍會把王秒殺,完全沒有「王」該有的份量。這裡用「多隻王同時出現」而非單純幫同一隻王
+// 加血,一來更符合組隊的直覺(一群人對抗一群敵人),二來天生沿用既有的多目標索敵/王機制
+// (蓄力/狂暴/抗性每隻各自獨立判定),不需要另外發明新公式。
+// 王隻數依人數增加,「每隻」王的血量/攻擊力也隨人數微幅提升——讓 2 人小隊也比單人吃力一些,
+// 不是非要湊滿 3~4 人才有感覺;血量提升幅度大於攻擊力,因為攻擊觸發次數本身就已經隨人數
+// 自然增加了(見 partyMemberAction:每次任一成員行動,存活的王都會各自反擊一次)。
+function bossCountForPartySize(size) {
+  return size >= 3 ? 2 : 1;
+}
+function bossStatMultiplier(size) {
+  return { hp: 1 + (size - 1) * 0.35, atk: 1 + (size - 1) * 0.12 };
+}
+// 通關獎勵倍率:注意「王隻數隨人數增加」本身已經自然疊加出對應的經驗/掉落總量
+// (多打一隻王,等同連續打贏兩隻王,這部分公平,不需要額外倍率補償),這裡的倍率只用來
+// 補償「每隻王個別血量/攻擊力也被調高」這一小部分額外難度,幅度務必保守——
+// 曾經誤用 0.4 的倍率跟王隻數疊加太重,4人隊伍變成經驗x4.4倍、稀有素材機率直接觸頂到
+// 100%必掉,完全失去稀有感,故意壓低到只補償「每隻王變強」的比例,不含王隻數增加的部分。
+function bossRewardMultiplier(size) {
+  return 1 + (size - 1) * 0.15;
+}
+
 // 開始副本:兩波結構(小怪波→王波),party.members 需已在 create/join 時記錄 classId 與 stats
 export function startBountyCombat(party, mapId) {
   const map = getMap(mapId);
   if (!map) return null;
-  const trashCount = trashWaveCount(party.members.length);
+  const partySize = party.members.length;
+  const trashCount = trashWaveCount(partySize);
   const trashEnemies = Array.from({ length: trashCount }, () => instantiatePartyEnemy(map.monsterPool[Math.floor(Math.random() * map.monsterPool.length)]));
 
   party.combat = {
     mapId: map.id,
     mapName: map.name,
+    partySize, // 開戰當下記錄人數,即使中途有人斷線也維持原定的王波規模與獎勵倍率不變
     waveIndex: 0, // 0 = 小怪波, 1 = 王波
     totalWaves: 2,
     enemies: trashEnemies,
+    bossRewardMult: 1, // 王波才會設為 bossRewardMultiplier(partySize),小怪波維持 1(不加成)
     totalExp: 0, // 累計至今擊敗敵人的經驗值,通關時一次性發放給所有成員
     defeatedDropTables: [], // 累計至今擊敗敵人的 dropTable,通關時每位成員各自獨立擲骰
     members: Object.fromEntries(
@@ -144,10 +171,21 @@ function advanceWave(party) {
     combat.ended = 'win';
     return;
   }
-  // 目前設計固定兩波,第二波即為地圖大王
-  const boss = instantiatePartyEnemy(map.boss);
-  combat.enemies = [boss];
-  combat.log.push(`—— 第 2/2 波:大王「${boss.name}」現身!——`);
+  // 目前設計固定兩波,第二波即為地圖大王——依隊伍人數決定同時出現幾隻、每隻的血量/攻擊力倍率
+  const count = bossCountForPartySize(combat.partySize);
+  const mult = bossStatMultiplier(combat.partySize);
+  const bosses = Array.from({ length: count }, () => {
+    const boss = instantiatePartyEnemy(map.boss);
+    boss.hp = Math.round(boss.hp * mult.hp);
+    boss.maxHp = boss.hp;
+    boss.atk = Math.round(boss.atk * mult.atk);
+    return boss;
+  });
+  combat.enemies = bosses;
+  combat.bossRewardMult = bossRewardMultiplier(combat.partySize);
+  combat.log.push(count > 1
+    ? `—— 第 2/2 波:${count} 隻大王「${bosses[0].name}」同時現身!——`
+    : `—— 第 2/2 波:大王「${bosses[0].name}」現身!——`);
 }
 
 // 隊伍成員的戰鬥行動:action 為 'basic'/'aoe'/'buff'/'defend'/'potionHeal',與單人戰鬥的技能規則完全一致
@@ -265,9 +303,17 @@ export function partyMemberAction(party, userId, action, extra = {}) {
   combat.log.push(...lines);
 
   if (aliveEnemies(combat).length === 0) {
-    const defeatedExp = combat.enemies.reduce((sum, e) => sum + e.exp, 0);
+    // 王波(bossRewardMult > 1)擊敗時,經驗與掉落機率一併按倍率提升——王被放大了,獎勵也要跟著放大,
+    // 呼應「花時間湊人打更難的王,要真的比單刷划算」的設計方向,小怪波(倍率恆為1)則不受影響。
+    const mult = combat.bossRewardMult || 1;
+    const defeatedExp = Math.round(combat.enemies.reduce((sum, e) => sum + e.exp, 0) * mult);
     combat.totalExp += defeatedExp;
-    combat.defeatedDropTables.push(...combat.enemies.map((e) => ({ dropTable: e.dropTable, tier: e.tier, level: e.level })));
+    combat.defeatedDropTables.push(...combat.enemies.map((e) => {
+      // 組隊限定的加成掉落(團隊戰印等)併入同一份 dropTable 一起擲骰,呼叫端不需要另外處理
+      const fullDropTable = e.partyBonusDrop ? [...(e.dropTable || []), e.partyBonusDrop] : e.dropTable;
+      const dropTable = (fullDropTable || []).map((d) => ({ ...d, chance: Math.min(1, d.chance * mult) }));
+      return { dropTable, tier: e.tier, level: e.level };
+    }));
     lines.push(`本波敵人已全數擊敗!獲得 ${defeatedExp} 點經驗。`);
     advanceWave(party);
     if (combat.ended === 'win') {

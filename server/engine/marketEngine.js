@@ -1,11 +1,11 @@
 // 雜貨店回收市場(奇幻練功MMO):全服共享單一列狀態(market_state 資料表,固定 id=1)。
 // 玩家越常賣同一種東西,該項回收庫存越高、回收價越低;每 5 分鐘銷毀部分庫存並轉換成藥水的特惠庫存(半價)。
-// 可回收範圍涵蓋 junk(雜物)/material(一般製作素材)/rare_material(稀有素材)三種——
+// 可回收範圍涵蓋 junk(雜物)/material(一般製作素材)/rare_material(稀有素材)/party_material(組隊限定素材)——
 // 材料要留著做裝備還是賣錢換現金,由玩家自己決定,不強制材料只能拿去製作。
 import db from '../db.js';
 import { ITEMS, POTION_ORDER, getPotion } from '../data/itemData.js';
 
-const SELLABLE_KINDS = ['junk', 'material', 'rare_material'];
+const SELLABLE_KINDS = ['junk', 'material', 'rare_material', 'party_material'];
 
 const DECAY_INTERVAL_MS = 5 * 60 * 1000;
 const DECAY_PCT = 0.25; // 每次銷毀目前庫存的 25%
