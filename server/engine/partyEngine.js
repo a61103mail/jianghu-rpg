@@ -1,7 +1,18 @@
-// 組隊系統(即時):以記憶體管理暫時性的隊伍與共同戰鬥狀態,不寫入存檔資料庫
+// 組隊副本系統(即時):以記憶體管理暫時性的隊伍與共同戰鬥狀態,不寫入存檔資料庫
 // (隊伍本身是暫時的社交狀態,重開伺服器即清空,不影響各自的主線存檔進度)。
+//
+// 本輪重新設計(取代先前「大家一起打同一隻大王的血條、只能點攻擊」的陽春版本):
+// - 兩波結構:第一波為地圖小怪(數量依隊伍人數增減),第二波為地圖大王,清完第一波才會出現第二波,
+//   讓「副本」真正有「過關卡」的節奏感,而不是單一場戰鬥。
+// - 每位成員可使用自己的完整技能組(單體/範圍/BUFF/防禦),不再只能點「攻擊」,
+//   各自追蹤自己的HP/MP/BUFF,傷害計算與解鎖等級規則跟單人戰鬥完全一致。
+// - 王波完整套用 monsterData.js 的新機制:物理/魔法抗性(依攻擊者職業的攻擊屬性判定)、
+//   蓄力預警與爆發傷害、血量門檻觸發狂暴——不再是空有數值、純比拼誰打得痛的無腦互毆。
+// - 通關獎勵:每位成員各自獲得所有波次擊敗敵人的完整經驗值,並各自獨立擲骰掉落表
+//   (材料/雜物/裝備),不用「比手速搶最後一擊」,人人都有實質收穫。
 import { getMap, getMonster } from '../data/monsterData.js';
-import { rollDamage, narrateAttack, narrateEnemyAttack } from './combatEngine.js';
+import { getClass } from '../data/classData.js';
+import { rollDamage, narrateAttack, narrateEnemyAttack, sumBuffValue, tickBuffs } from './combatEngine.js';
 
 const parties = new Map(); // partyCode -> party
 
@@ -14,7 +25,7 @@ export function createParty(leader) {
   while (parties.has(code)) code = randomCode();
   const party = {
     code,
-    members: [leader], // { userId, username, stats, socketId }
+    members: [leader], // { userId, username, classId, stats, socketId }
     combat: null,
   };
   parties.set(code, party);
@@ -62,62 +73,209 @@ export function updateMemberSocket(userId, socketId) {
   return party;
 }
 
-// 開始共鬥懸賞目標:所有隊員共同對抗指定地圖的大王(mapId 由前端傳入,對應該地圖的 boss)
+// 依 monsterData.js 的怪物資料實例化一份「戰鬥用副本」,帶入王的抗性/蓄力/狂暴機制欄位
+// (欄位設計與 routes/game.js 的 instantiateEnemy 完全一致,單人/組隊共用同一套王機制)
+function instantiatePartyEnemy(monsterId) {
+  const m = getMonster(monsterId);
+  return {
+    monsterId: m.id, name: m.name, level: m.level, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, critRate: m.critRate, exp: m.exp, tier: m.tier || 'normal', dropTable: m.dropTable,
+    physicalResistPct: m.physicalResistPct || 0,
+    magicResistPct: m.magicResistPct || 0,
+    enrageHpPct: m.enrageHpPct ?? null,
+    enrageAtkMult: m.enrageAtkMult ?? null,
+    enraged: false,
+    chargeSkill: m.chargeSkill || null,
+    charging: false,
+    turnCounter: 0,
+  };
+}
+
+// 第一波小怪數量:依隊伍人數增減(單人也能組隊挑戰,但人越多小怪越多,維持壓力感),上限6隻避免過度混亂
+function trashWaveCount(partySize) {
+  return Math.min(6, partySize + 1);
+}
+
+// 開始副本:兩波結構(小怪波→王波),party.members 需已在 create/join 時記錄 classId 與 stats
 export function startBountyCombat(party, mapId) {
   const map = getMap(mapId);
   if (!map) return null;
-  const enemy = getMonster(map.boss);
-  if (!enemy) return null;
+  const trashCount = trashWaveCount(party.members.length);
+  const trashEnemies = Array.from({ length: trashCount }, () => instantiatePartyEnemy(map.monsterPool[Math.floor(Math.random() * map.monsterPool.length)]));
+
   party.combat = {
     mapId: map.id,
-    enemyId: enemy.id,
-    enemyName: enemy.name,
-    enemyLevel: enemy.level,
-    enemyHp: enemy.hp,
-    enemyMaxHp: enemy.hp,
-    enemyDef: enemy.def,
-    enemyAtk: enemy.atk,
-    enemyCritRate: enemy.critRate,
+    mapName: map.name,
+    waveIndex: 0, // 0 = 小怪波, 1 = 王波
+    totalWaves: 2,
+    enemies: trashEnemies,
+    totalExp: 0, // 累計至今擊敗敵人的經驗值,通關時一次性發放給所有成員
+    defeatedDropTables: [], // 累計至今擊敗敵人的 dropTable,通關時每位成員各自獨立擲骰
     members: Object.fromEntries(
-      party.members.map((m) => [m.userId, { username: m.username, hp: m.stats.hp, maxHp: m.stats.hp, stats: m.stats }])
+      party.members.map((m) => [m.userId, {
+        username: m.username,
+        classId: m.classId,
+        hp: m.stats.maxHp ?? m.stats.hp,
+        maxHp: m.stats.maxHp ?? m.stats.hp,
+        mp: m.stats.maxMp ?? m.stats.mp,
+        maxMp: m.stats.maxMp ?? m.stats.mp,
+        stats: m.stats,
+        buffs: [],
+      }])
     ),
-    log: [`「${enemy.name}」現身,眾人合力迎戰!`],
+    log: [`—— 第 1/2 波:遭遇 ${trashEnemies.length} 隻小怪!——`],
     ended: null,
   };
   return party.combat;
 }
 
-// 隊伍中一名成員出手攻擊(傷害套用到共用的敵方血量),敵方隨機反擊其中一位存活隊員
-export function partyMemberAttack(party, userId) {
+function aliveEnemies(combat) {
+  return combat.enemies.filter((e) => e.hp > 0);
+}
+function aliveMembers(combat) {
+  return Object.entries(combat.members).filter(([, m]) => m.hp > 0);
+}
+
+// 進入下一波,或若已是最後一波則宣告通關(由呼叫端負責發放獎勵,這裡只切換戰鬥狀態)
+function advanceWave(party) {
+  const combat = party.combat;
+  const map = getMap(combat.mapId);
+  combat.waveIndex += 1;
+  if (combat.waveIndex >= combat.totalWaves) {
+    combat.ended = 'win';
+    return;
+  }
+  // 目前設計固定兩波,第二波即為地圖大王
+  const boss = instantiatePartyEnemy(map.boss);
+  combat.enemies = [boss];
+  combat.log.push(`—— 第 2/2 波:大王「${boss.name}」現身!——`);
+}
+
+// 隊伍成員的戰鬥行動:action 為 'basic'/'aoe'/'buff'/'defend'/'potionHeal',與單人戰鬥的技能規則完全一致
+// (potionHeal 的實際扣除藥水庫存由呼叫端處理,這裡只負責套用戰鬥數值本身)
+export function partyMemberAction(party, userId, action, extra = {}) {
   const combat = party.combat;
   if (!combat || combat.ended) return null;
   const actor = combat.members[userId];
-  if (!actor || actor.hp <= 0) return { lines: ['你已倒下,無法出手。'] };
+  if (!actor || actor.hp <= 0) return { lines: ['你已倒下,無法行動。'] };
 
+  const cls = getClass(actor.classId);
   const lines = [];
-  const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: actor.stats.atk, coeff: 1, def: combat.enemyDef, critRate: actor.stats.critRate });
-  combat.enemyHp = Math.max(0, combat.enemyHp - amount);
-  lines.push(narrateAttack({ attackerName: actor.username, defenderName: combat.enemyName, amount, isCrit }));
+  let acted = false;
 
-  if (combat.enemyHp <= 0) {
-    combat.ended = 'win';
-    lines.push(`眾人齊心,擊敗了「${combat.enemyName}」!`);
-    return { lines, ended: 'win' };
+  if (action === 'defend') {
+    lines.push(`${actor.username}收起攻勢,擺出防禦姿態!`);
+    acted = true;
+  } else if (action === 'potionHeal') {
+    if (extra.healAmount) {
+      actor.hp = Math.min(actor.maxHp, actor.hp + extra.healAmount);
+      lines.push(`${actor.username}使用了${extra.potionName},恢復 ${extra.healAmount} 點氣血。`);
+    } else if (extra.manaAmount) {
+      actor.mp = Math.min(actor.maxMp, actor.mp + extra.manaAmount);
+      lines.push(`${actor.username}使用了${extra.potionName},恢復 ${extra.manaAmount} 點真力。`);
+    }
+    acted = true;
+  } else if (action === 'basic' || action === 'aoe' || action === 'buff') {
+    const skill = cls.skills[action];
+    if (!skill) return { lines: ['無此技能。'] };
+    if (actor.stats.level < skill.unlockLevel) return { lines: [`尚未達到等級,無法施展「${skill.name}」(需 Lv.${skill.unlockLevel})`] };
+    if (actor.mp < skill.mpCost) return { lines: [`真力不足,無法施展「${skill.name}」`] };
+    actor.mp -= skill.mpCost;
+    const atkStat = cls.attackType === 'matk' ? actor.stats.matk : actor.stats.atk;
+    const critRate = actor.stats.critRate + sumBuffValue(actor.buffs, 'critRatePct');
+    const atkMult = 1 + sumBuffValue(actor.buffs, 'atkPct');
+    const resistFor = (target) => (cls.attackType === 'matk' ? target.magicResistPct : target.physicalResistPct) || 0;
+
+    if (action === 'basic') {
+      const idx = Number.isInteger(extra.targetIndex) && combat.enemies[extra.targetIndex]?.hp > 0 ? extra.targetIndex : combat.enemies.findIndex((e) => e.hp > 0);
+      const target = combat.enemies[idx];
+      if (!target) return { lines: ['目標無效。'] };
+      const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
+      target.hp = Math.max(0, target.hp - amount);
+      lines.push(`${actor.username}施展「${skill.name}」!` + narrateAttack({ attackerName: actor.username, defenderName: target.name, amount, isCrit }));
+    } else if (action === 'aoe') {
+      lines.push(`${actor.username}施展「${skill.name}」,席捲全場!`);
+      combat.enemies.forEach((target) => {
+        if (target.hp <= 0) return;
+        const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
+        target.hp = Math.max(0, target.hp - amount);
+        lines.push(narrateAttack({ attackerName: actor.username, defenderName: target.name, amount, isCrit }));
+      });
+    } else if (skill.healPct) {
+      const amt = Math.round(actor.maxHp * skill.healPct);
+      actor.hp = Math.min(actor.maxHp, actor.hp + amt);
+      lines.push(`${actor.username}施展「${skill.name}」,恢復 ${amt} 點氣血。`);
+    } else if (skill.durationTurns) {
+      const [key, value] = Object.entries(skill.effect)[0];
+      actor.buffs.push({ key, value, turnsLeft: skill.durationTurns });
+      lines.push(`${actor.username}施展「${skill.name}」!${skill.desc}`);
+    }
+    acted = true;
+  } else {
+    return { lines: ['無效的操作。'] };
   }
 
-  // 敵方從存活隊員中隨機挑一位反擊
-  const alive = Object.entries(combat.members).filter(([, m]) => m.hp > 0);
-  if (alive.length > 0) {
+  if (!acted) return { lines };
+
+  // 敵方回合:王機制(蓄力預警/爆發/狂暴)與單人戰鬥邏輯完全一致,差別是攻擊目標從存活成員中隨機挑選
+  const defending = action === 'defend';
+  aliveEnemies(combat).forEach((enemy) => {
+    const alive = aliveMembers(combat);
+    if (alive.length === 0) return;
     const [targetId, target] = alive[Math.floor(Math.random() * alive.length)];
-    const atk = rollDamage({ level: combat.enemyLevel, atk: combat.enemyAtk, coeff: 1, def: target.stats.def, critRate: combat.enemyCritRate });
-    target.hp = Math.max(0, target.hp - atk.amount);
-    lines.push(narrateEnemyAttack({ enemyName: combat.enemyName, targetName: target.username, amount: atk.amount, isCrit: atk.isCrit }));
+
+    if (enemy.enrageHpPct != null && !enemy.enraged && enemy.hp / enemy.maxHp <= enemy.enrageHpPct) {
+      enemy.enraged = true;
+      enemy.atk = Math.round(enemy.atk * enemy.enrageAtkMult);
+      lines.push(`⚠ ${enemy.name}的傷勢激起了狂暴,攻擊力大幅提升!`);
+    }
+
+    let isChargeRelease = false;
+    if (enemy.charging) {
+      isChargeRelease = true;
+      enemy.charging = false;
+    } else if (enemy.chargeSkill) {
+      enemy.turnCounter += 1;
+      if (enemy.turnCounter % enemy.chargeSkill.triggerEveryTurns === 0) {
+        enemy.charging = true;
+        lines.push(`⚠ ${enemy.name}${enemy.chargeSkill.telegraphText}`);
+        return;
+      }
+    }
+
+    const { amount, isCrit } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: target.stats.def, critRate: enemy.critRate });
+    const boosted = isChargeRelease ? Math.round(amount * enemy.chargeSkill.dmgMult) : amount;
+    // 防禦只減輕「行動者自己」承受的傷害(跟單人戰鬥一致的設計精神:防禦是主動選擇要扛下這一擊的人)
+    const isDefendingTarget = defending && targetId === userId;
+    const finalAmount = isDefendingTarget ? Math.max(1, Math.ceil(boosted * 0.5)) : boosted;
+    target.hp = Math.max(0, target.hp - finalAmount);
+    if (isChargeRelease) {
+      lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!對${target.username}造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${isDefendingTarget ? '(防禦大幅減輕了衝擊)' : ''}。`);
+    } else {
+      lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, amount: finalAmount, isCrit }) + (isDefendingTarget ? '(防禦減傷)' : ''));
+    }
+  });
+
+  // 每位成員各自的buff結算(跟單人戰鬥一致,每回合遞減)
+  Object.values(combat.members).forEach((m) => { m.buffs = tickBuffs(m.buffs); });
+
+  combat.log.push(...lines);
+
+  if (aliveEnemies(combat).length === 0) {
+    const defeatedExp = combat.enemies.reduce((sum, e) => sum + e.exp, 0);
+    combat.totalExp += defeatedExp;
+    combat.defeatedDropTables.push(...combat.enemies.map((e) => ({ dropTable: e.dropTable, tier: e.tier, level: e.level })));
+    lines.push(`本波敵人已全數擊敗!獲得 ${defeatedExp} 點經驗。`);
+    advanceWave(party);
+    if (combat.ended === 'win') {
+      lines.push(`副本通關!眾人合力擊敗了「${combat.mapName}」的挑戰。`);
+      return { lines, ended: 'win', totalExp: combat.totalExp, defeatedDropTables: combat.defeatedDropTables };
+    }
   }
 
-  const stillAlive = Object.values(combat.members).some((m) => m.hp > 0);
+  const stillAlive = aliveMembers(combat).length > 0;
   if (!stillAlive) {
     combat.ended = 'lose';
-    lines.push('隊伍全數力竭,懸賞目標揚長而去。');
+    lines.push('隊伍全數力竭,副本挑戰失敗。');
     return { lines, ended: 'lose' };
   }
 

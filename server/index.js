@@ -12,6 +12,8 @@ import gameRoutes from './routes/game.js';
 import db from './db.js';
 import { computeStats, addLog, checkLevelUp } from './engine/characterEngine.js';
 import { depositFallenLoot } from './engine/fallenLootEngine.js';
+import { generateCommonGear } from './engine/itemEngine.js';
+import { getItem, getPotion } from './data/itemData.js';
 import {
   createParty,
   getParty,
@@ -20,7 +22,7 @@ import {
   findPartyByUser,
   updateMemberSocket,
   startBountyCombat,
-  partyMemberAttack,
+  partyMemberAction,
   endCombat,
 } from './engine/partyEngine.js';
 import { challenge, getPendingChallenge, declineChallenge, acceptChallenge, findDuelByUser, duelAttack, endDuel } from './engine/duelEngine.js';
@@ -126,7 +128,7 @@ io.on('connection', (socket) => {
     const row = getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
-    const party = createParty({ userId, username, stats, socketId: socket.id });
+    const party = createParty({ userId, username, classId: save.classId, stats, socketId: socket.id });
     socket.join(party.code);
     socket.emit('party:joined', { code: party.code, members: party.members.map((m) => ({ userId: m.userId, username: m.username })) });
   }));
@@ -135,7 +137,7 @@ io.on('connection', (socket) => {
     const row = getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
-    const party = joinParty(code, { userId, username, stats, socketId: socket.id });
+    const party = joinParty(code, { userId, username, classId: save.classId, stats, socketId: socket.id });
     if (!party) return socket.emit('party:error', { error: '找不到隊伍,或隊伍已滿/戰鬥中' });
     socket.join(party.code);
     broadcastParty(party, 'party:joined', { code: party.code, members: party.members.map((m) => ({ userId: m.userId, username: m.username })) });
@@ -158,20 +160,58 @@ io.on('connection', (socket) => {
     broadcastParty(party, 'party:combat-update', { combat, lines: combat.log });
   }));
 
-  socket.on('party:attack', safeHandler(socket, 'party:error', () => {
+  // 副本內成員的戰鬥行動:action = 'basic'/'aoe'/'buff'/'defend'/'potion'
+  // (potion 由這裡先讀取行動者自己的存檔藥水庫存並扣除,再把算好的回復量交給 partyEngine 套用)
+  socket.on('party:action', safeHandler(socket, 'party:error', ({ action, targetIndex, potionId }) => {
     const party = findPartyByUser(userId);
-    if (!party || !party.combat) return socket.emit('party:error', { error: '目前沒有進行中的共鬥' });
-    const result = partyMemberAttack(party, userId);
+    if (!party || !party.combat) return socket.emit('party:error', { error: '目前沒有進行中的副本' });
+
+    let extra = { targetIndex };
+    if (action === 'potion') {
+      const potion = getPotion(potionId);
+      if (!potion) return socket.emit('party:error', { error: '無此藥水' });
+      const row = getSaveStmt.get(userId);
+      const save = JSON.parse(row.data);
+      if (!(save.potions?.[potionId] > 0)) return socket.emit('party:error', { error: '藥水數量不足' });
+      save.potions[potionId] -= 1;
+      putSaveStmt.run(userId, JSON.stringify(save), new Date().toISOString());
+      const member = party.combat.members[userId];
+      if (potion.kind === 'hp') extra = { healAmount: Math.round(member.maxHp * potion.healPct), potionName: potion.name };
+      else extra = { manaAmount: Math.round(member.maxMp * potion.healPct), potionName: potion.name };
+    }
+
+    const result = partyMemberAction(party, userId, action === 'potion' ? 'potionHeal' : action, extra);
+    if (!result) return;
     broadcastParty(party, 'party:combat-update', { combat: party.combat, lines: result.lines, actorId: userId });
 
     if (result.ended === 'win') {
-      const enemy = party.combat.enemyId;
       party.members.forEach((m) => {
         const row = getSaveStmt.get(m.userId);
         const memberSave = JSON.parse(row.data);
-        memberSave.exp += 40; // 懸賞共鬥固定歷練獎勵(不依賴誰打最後一擊,人人有份)
-        addLog(memberSave, `與同伴合力擊敗懸賞要犯,獲得歷練。`);
+        memberSave.exp += result.totalExp;
+        const leveledTo = checkLevelUp(memberSave);
+        const drops = [];
+        // 每位成員各自獨立擲骰所有已擊敗敵人的掉落表——不用搶最後一擊,人人依機率各自判定
+        result.defeatedDropTables.forEach(({ dropTable, tier, level }) => {
+          (dropTable || []).forEach((d) => {
+            if (Math.random() < d.chance) {
+              const amt = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
+              memberSave.materials[d.id] = (memberSave.materials[d.id] || 0) + amt;
+              drops.push(`${getItem(d.id)?.name || d.id} x${amt}`);
+            }
+          });
+          const gearChance = tier === 'boss' ? 0.35 : tier === 'miniboss' ? 0.25 : 0.12;
+          if (Math.random() < gearChance) {
+            const gear = generateCommonGear(level);
+            memberSave.inventory.push(gear);
+            drops.push(`裝備:${gear.name}`);
+          }
+        });
+        addLog(memberSave, `與同伴合力通關副本,獲得 ${result.totalExp} 點經驗${drops.length ? `,戰利品:${drops.join('、')}` : ''}。`);
+        if (leveledTo) addLog(memberSave, `升級至 Lv.${leveledTo}。`);
         putSaveStmt.run(m.userId, JSON.stringify(memberSave), new Date().toISOString());
+        const sid = onlineUsers.get(m.userId);
+        if (sid) io.to(sid).emit('party:reward', { totalExp: result.totalExp, drops, leveledTo });
       });
       endCombat(party);
     } else if (result.ended === 'lose') {

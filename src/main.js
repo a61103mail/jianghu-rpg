@@ -106,7 +106,7 @@ function topBar() {
       navBtn('hub', '城鎮'),
       navBtn('inventory', '裝備'),
       navBtn('auction', '交易所'),
-      navBtn('party', '組隊懸賞'),
+      navBtn('party', '組隊副本'),
       navBtn('duel', '決鬥'),
       h('button', { class: 'btn', onclick: doLogout }, '登出'),
     ]),
@@ -894,7 +894,7 @@ function renderAuction() {
   app.appendChild(wrap);
 }
 
-// ---- 組隊懸賞畫面 ----
+// ---- 組隊副本畫面 ----
 function renderParty() {
   const wrap = document.createElement('div');
   wrap.appendChild(topBar());
@@ -902,8 +902,8 @@ function renderParty() {
   bindPartySocket(sock);
 
   const panel = h('div', { class: 'panel' }, [
-    h('h3', {}, '組隊懸賞'),
-    h('p', { class: 'hint' }, '選定一張地圖的大王,邀請同伴即時共鬥吧。'),
+    h('h3', {}, '組隊副本'),
+    h('p', { class: 'hint' }, '選定一張地圖挑戰副本:先清一波小怪,再迎戰該圖大王(含蓄力/狂暴機制),通關人人都有經驗與戰利品。'),
     !S.party ? h('div', {}, [
       h('button', { class: 'btn primary', onclick: () => sock.emit('party:create') }, '建立隊伍'),
       h('input', { type: 'text', id: 'p-code', placeholder: '輸入隊伍代碼' }),
@@ -911,29 +911,85 @@ function renderParty() {
     ]) : h('div', {}, [
       h('div', {}, `隊伍代碼:${S.party.code}`),
       h('div', {}, `成員:${S.party.members.map((m) => m.username).join('、')}`),
-      !S.party.combat ? h('div', {}, (S.state.maps || []).map((m) =>
-        h('button', { class: 'btn primary', onclick: () => sock.emit('party:start-bounty', { mapId: m.id }) }, `迎戰「${m.name}」大王`)
+      !S.party.combat ? h('div', { class: 'card-grid' }, (S.state.maps || []).map((m) =>
+        h('div', { class: 'item-card' }, [
+          h('div', {}, `${m.name}(Lv.${m.levelRange[0]}~${m.levelRange[1]})`),
+          h('button', { class: 'btn primary', onclick: () => sock.emit('party:start-bounty', { mapId: m.id }) }, '挑戰副本'),
+        ])
       )) : null,
-      h('button', { class: 'btn', onclick: () => { sock.emit('party:leave'); S.party = null; render(); } }, '離隊'),
+      !S.party.combat ? h('button', { class: 'btn', onclick: () => { sock.emit('party:leave'); S.party = null; render(); } }, '離隊') : null,
     ]),
     S.party?.combat ? renderPartyCombat(S.party.combat) : null,
   ]);
   wrap.appendChild(panel);
+  if (S.error) wrap.appendChild(h('div', { class: 'error-msg' }, S.error));
   app.innerHTML = '';
   app.appendChild(wrap);
 }
 
 function renderPartyCombat(combat) {
   const sock = getSocket();
-  const enemyPct = Math.round((combat.enemyHp / combat.enemyMaxHp) * 100);
+  const selfEntry = Object.entries(combat.members).find(([, m]) => m.username === S.username);
+  const self = selfEntry ? selfEntry[1] : null;
+  const selfClassSkills = S.state.skills;
+  const level = S.state.level;
+  const aliveEnemyCount = combat.enemies.filter((e) => e.hp > 0).length;
+
+  const doAction = (action, extra = {}) => sock.emit('party:action', { action, ...extra });
+
   return h('div', { style: 'margin-top:12px;' }, [
-    h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill enemy', style: `width:${enemyPct}%` }), h('div', { class: 'bar-label' }, `${combat.enemyName} ${combat.enemyHp}/${combat.enemyMaxHp}`)]),
+    h('h4', {}, `第 ${combat.waveIndex + 1}/${combat.totalWaves} 波 — ${combat.mapName}`),
+    ...combat.enemies.map((e) => {
+      const pct = Math.round((e.hp / e.maxHp) * 100);
+      return h('div', { class: 'bar-bg', style: 'margin-bottom:4px;' }, [h('div', { class: 'bar-fill enemy', style: `width:${pct}%` }), h('div', { class: 'bar-label' }, `${e.name}(Lv.${e.level}) ${e.hp}/${e.maxHp}`)]);
+    }),
+    h('div', { style: 'height:6px' }),
     ...Object.entries(combat.members).map(([uid, m]) => {
       const pct = Math.round((m.hp / m.maxHp) * 100);
-      return h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill hp', style: `width:${pct}%` }), h('div', { class: 'bar-label' }, `${m.username} ${m.hp}/${m.maxHp}`)]);
+      const isSelf = m.username === S.username;
+      return h('div', { style: 'margin-bottom:4px;' }, [
+        h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${pct}%` }), h('div', { class: 'bar-label' }, `${m.username}${isSelf ? '(你)' : ''} ${m.hp}/${m.maxHp}`)]),
+        isSelf ? h('div', { class: 'bar-bg', style: 'margin-top:2px;' }, [h('div', { class: 'bar-fill mp', style: `width:${Math.round((m.mp / m.maxMp) * 100)}%` }), h('div', { class: 'bar-label' }, `真力 ${m.mp}/${m.maxMp}`)]) : null,
+      ]);
     }),
-    h('div', { class: 'log-list', style: 'margin-top:10px;' }, combat.log.map((l) => h('div', {}, l))),
-    !combat.ended ? h('button', { class: 'btn primary', onclick: () => sock.emit('party:attack') }, '出手攻擊') : h('div', { class: 'hint' }, combat.ended === 'win' ? '此戰告捷!' : '此戰落敗。'),
+    h('div', {
+      class: 'log-list',
+      style: 'margin-top:10px;',
+    }, combat.log.map((l) => h('div', { class: l.includes('⚠') ? 'log-telegraph' : l.includes('💥') ? 'log-impact' : '' }, l))),
+
+    !combat.ended && self && self.hp > 0
+      ? h('div', { class: 'skill-bar', style: 'flex-direction:column;align-items:stretch;margin-top:8px;' }, [
+          h('div', { class: 'skill-row' }, [
+            h('span', { class: 'skill-row-label' }, '單體'),
+            ...combat.enemies.map((e, idx) => e.hp > 0
+              ? h('button', { class: 'skill-btn attack', onclick: () => doAction('basic', { targetIndex: idx }) }, aliveEnemyCount > 1 ? `${selfClassSkills.basic.name}→${e.name}` : selfClassSkills.basic.name)
+              : null),
+          ]),
+          h('div', { class: 'skill-row' }, [
+            h('span', { class: 'skill-row-label' }, '範圍'),
+            level >= selfClassSkills.aoe.unlockLevel
+              ? h('button', { class: 'skill-btn', onclick: () => doAction('aoe') }, `${selfClassSkills.aoe.name}(MP${selfClassSkills.aoe.mpCost})`)
+              : h('button', { class: 'skill-btn locked', disabled: true }, `🔒${selfClassSkills.aoe.name}(Lv.${selfClassSkills.aoe.unlockLevel})`),
+          ]),
+          h('div', { class: 'skill-row' }, [
+            h('span', { class: 'skill-row-label' }, 'BUFF'),
+            level >= selfClassSkills.buff.unlockLevel
+              ? h('button', { class: 'skill-btn', onclick: () => doAction('buff') }, `${selfClassSkills.buff.name}(MP${selfClassSkills.buff.mpCost})`)
+              : h('button', { class: 'skill-btn locked', disabled: true }, `🔒${selfClassSkills.buff.name}(Lv.${selfClassSkills.buff.unlockLevel})`),
+          ]),
+          h('div', { class: 'skill-row' }, [
+            h('span', { class: 'skill-row-label' }, '防禦'),
+            h('button', { class: 'skill-btn defend', onclick: () => doAction('defend') }, '防禦(減傷50%)'),
+          ]),
+        ])
+      : null,
+    !combat.ended && self && self.hp > 0
+      ? h('div', { style: 'margin-top:6px;' }, S.state.potions.filter((p) => p.count > 0).map((p) =>
+          h('button', { class: 'btn', onclick: () => doAction('potion', { potionId: p.id }) }, `使用${p.name}(x${p.count})`)
+        ))
+      : null,
+
+    combat.ended ? h('div', { class: 'hint', style: 'margin-top:8px;' }, combat.ended === 'win' ? '副本通關!' : '此戰落敗,副本挑戰失敗。') : null,
   ]);
 }
 
@@ -942,6 +998,11 @@ function bindPartySocket(sock) {
   sock._partyBound = true;
   sock.on('party:joined', (data) => { S.party = { ...data, combat: S.party?.combat || null }; render(); });
   sock.on('party:combat-update', (data) => { if (S.party) { S.party.combat = data.combat; render(); } });
+  sock.on('party:reward', (data) => {
+    const dropsText = data.drops.length ? `,戰利品:${data.drops.join('、')}` : '';
+    S.error = `副本獎勵:經驗+${data.totalExp}${dropsText}${data.leveledTo ? `,升級至Lv.${data.leveledTo}!` : ''}`;
+    refreshState();
+  });
   sock.on('party:error', (data) => { S.error = data.error; render(); });
 }
 
