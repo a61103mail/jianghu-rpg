@@ -50,6 +50,7 @@ const S = {
   duel: null,
   duelPending: null,
   duelMsg: '',
+  onlinePlayers: [], // 在線玩家名單(不含自己),供決鬥畫面直接點選挑戰對象,不用手動輸入帳號
 };
 
 function h(tag, attrs = {}, children = []) {
@@ -141,7 +142,7 @@ function topBar() {
 function navBtn(view, label) {
   return h('button', {
     class: `btn${S.view === view ? ' active' : ''}`,
-    onclick: () => { if (view === 'auction') { openAuction(); } else { S.view = view; render(); } },
+    onclick: () => { if (view === 'auction') { openAuction(); } else if (view === 'duel') { openDuel(); } else { S.view = view; render(); } },
   }, label);
 }
 
@@ -1021,14 +1022,47 @@ function bindPartySocket(sock) {
 }
 
 // ---- 決鬥畫面 ----
+function openDuel() {
+  const sock = connectSocket();
+  bindDuelSocket(sock);
+  // 只在「切換進來」這個時間點要一次快照,不要放進 renderDuel() 本身——
+  // 那樣的話收到 presence:update 觸發的重繪又會再要一次,變成無窮迴圈。
+  sock.emit('presence:request');
+  S.view = 'duel';
+  render();
+}
+
 function renderDuel() {
   const sock = connectSocket();
   bindDuelSocket(sock);
+
+  const challengeBtn = (targetUsername, stakes) => h('button', {
+    class: stakes === 'death' ? 'btn danger' : 'btn',
+    onclick: () => {
+      if (stakes === 'death' && !confirm(`向「${targetUsername}」送出生死戰帖,敗者帳號將被永久刪除,確定?`)) return;
+      sock.emit('duel:challenge', { targetUsername, stakes });
+    },
+  }, stakes === 'death' ? '決生死' : '論勝負');
+
+  // 在線玩家名單:直接點選要挑戰的對象,不用自己輸入帳號,也不用猜誰現在有沒有在線
+  const onlineListPanel = h('div', { class: 'panel' }, [
+    h('h3', { style: 'font-size:15px;' }, `在線玩家(${S.onlinePlayers.length})`),
+    S.onlinePlayers.length === 0
+      ? h('div', { class: 'hint' }, '目前沒有其他玩家在線,晚點再來看看。')
+      : h('div', { class: 'card-grid list-scroll' }, S.onlinePlayers.map((p) =>
+          h('div', { class: 'item-card' }, [
+            h('div', { style: 'margin-bottom:4px;' }, p.username),
+            challengeBtn(p.username, 'win'),
+            challengeBtn(p.username, 'death'),
+          ])
+        )),
+  ]);
 
   const panel = h('div', { class: 'panel' }, [
     h('h3', {}, '決鬥'),
     h('p', { class: 'hint' }, '論勝負:切磋較量,點到為止。決生死:立下生死戰約,敗者帳號永久刪除,唯有勝者能得大量經驗。'),
     !S.duel ? h('div', {}, [
+      h('p', { class: 'hint' }, '也可以直接輸入帳號(不一定要在下方名單裡,但對方要在線才能收到戰帖):'),
       h('input', { type: 'text', id: 'd-target', placeholder: '對方帳號' }),
       h('button', { class: 'btn', onclick: () => sock.emit('duel:challenge', { targetUsername: document.getElementById('d-target').value.trim(), stakes: 'win' }) }, '下戰帖(論勝負)'),
       h('button', { class: 'btn danger', onclick: () => {
@@ -1045,7 +1079,7 @@ function renderDuel() {
     S.duelMsg ? h('div', { class: 'error-msg' }, S.duelMsg) : null,
   ]);
   // 決鬥進行中同樣改用精簡標題列,理由同單人戰鬥/組隊副本
-  mount([S.duel ? combatTopBar() : topBar()], [panel]);
+  mount([S.duel ? combatTopBar() : topBar()], [S.duel ? panel : onlineListPanel, S.duel ? null : panel]);
 }
 
 function renderDuelCombat() {
@@ -1064,6 +1098,7 @@ function renderDuelCombat() {
 function bindDuelSocket(sock) {
   if (sock._duelBound) return;
   sock._duelBound = true;
+  sock.on('presence:update', (data) => { S.onlinePlayers = data.players; if (S.view === 'duel') render(); });
   sock.on('duel:challenged', (data) => { S.duelPending = data; render(); });
   sock.on('duel:start', (data) => { S.duel = data.duel; S.duelPending = null; render(); });
   sock.on('duel:update', (data) => { S.duel = data.duel; render(); });

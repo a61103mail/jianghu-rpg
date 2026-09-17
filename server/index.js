@@ -87,6 +87,16 @@ const deleteSaveStmt = db.prepare('DELETE FROM saves WHERE user_id = ?');
 const deleteUserStmt = db.prepare('DELETE FROM users WHERE id = ?');
 
 const onlineUsers = new Map(); // userId -> socketId,供決鬥挑戰指定對象使用
+const onlineUsernames = new Map(); // userId -> username,供「在線玩家名單」功能顯示(見 broadcastPresence)
+
+// 廣播目前所有在線玩家名單給每一個人(不含自己),讓決鬥畫面能直接顯示可挑戰對象清單,
+// 不用再自己輸入對方帳號——每次有人上線/離線都重新推播一次,確保名單即時。
+function broadcastPresence() {
+  const all = Array.from(onlineUsernames.entries()).map(([userId, username]) => ({ userId, username }));
+  onlineUsers.forEach((socketId, userId) => {
+    io.to(socketId).emit('presence:update', { players: all.filter((p) => p.userId !== userId) });
+  });
+}
 
 // 生死決鬥落敗:輸家的帳號與存檔被永久刪除(不可復原)。
 // 贏家獎勵不給裝備/道具這類「現成的」東西——裝備本就該靠玩家自己去打拼、製作取得。
@@ -144,6 +154,15 @@ function safeHandler(socket, errorEvent, fn) {
 io.on('connection', (socket) => {
   const { userId, username } = socket.user;
   onlineUsers.set(userId, socket.id);
+  onlineUsernames.set(userId, username);
+  broadcastPresence();
+
+  // 玩家進入決鬥畫面時主動要求一份「當下」的在線名單快照,避免因為連線時機
+  // (例如先逛了別的畫面,才第一次切到決鬥畫面)錯過先前的廣播、名單顯示過期。
+  socket.on('presence:request', () => {
+    const all = Array.from(onlineUsernames.entries()).map(([uid, uname]) => ({ userId: uid, username: uname }));
+    socket.emit('presence:update', { players: all.filter((p) => p.userId !== userId) });
+  });
 
   socket.on('party:create', safeHandler(socket, 'party:error', async () => {
     const row = await getSaveStmt.get(userId);
@@ -308,6 +327,8 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     onlineUsers.delete(userId);
+    onlineUsernames.delete(userId);
+    broadcastPresence();
     const party = findPartyByUser(userId);
     if (party) {
       const member = party.members.find((m) => m.userId === userId);
