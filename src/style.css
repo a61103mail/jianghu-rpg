@@ -12,18 +12,39 @@
 
 * { box-sizing: border-box; }
 
-body {
+/* 版面高度一律用「相對於當前視窗」的單位(vh/dvh),不寫死任何固定像素高度——
+   不論使用者螢幕解析度大小,畫面都精準吃滿視窗高度,由內層 flex 區塊自行決定
+   誰該固定、誰該在空間不夠時內部捲動,而不是整頁一起往下捲。 */
+html, body {
   margin: 0;
+  height: 100%;
+  overflow: hidden; /* 外層永遠不出現整頁捲軸,捲動只會發生在畫面內部特定區塊 */
+}
+
+body {
   background: var(--bg);
   color: var(--ink);
   font-family: "Microsoft JhengHei", "PMingLiU", serif;
-  min-height: 100vh;
 }
 
 #app {
   max-width: 1320px;
   margin: 0 auto;
-  padding: 16px;
+  padding: 10px 16px;
+  height: 100vh;
+  height: 100dvh; /* 動態視窗高度:行動裝置網址列出現/收起時仍準確貼合可視區域 */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 畫面主要內容區:固定在上方的標題列/導覽列之後,佔滿剩餘高度。
+   內容真的放不下時只有「這一區」會出現捲軸,標題列與導覽按鈕永遠保持在原位不會被推走。 */
+.screen-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px; /* 預留捲軸寬度,避免內容被捲軸遮住邊緣文字 */
 }
 
 h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
@@ -32,8 +53,8 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
   background: var(--panel);
   border: 1px solid var(--panel-border);
   border-radius: 6px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
+  padding: 10px 14px;
+  margin-bottom: 8px;
 }
 
 /* 多欄版面:讓同一畫面內互不相關的區塊並排顯示,減少整頁要一直往下滾的問題。
@@ -155,7 +176,9 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 .nav-tabs button { flex: none; }
 .nav-tabs button.active { border-color: var(--accent); background: #3a2f14; }
 
-.log-list { height: 200px; max-height: 200px; overflow-y: auto; font-size: 13px; color: var(--ink-dim); display: flex; flex-direction: column-reverse; gap: 3px; min-height: 0; flex-shrink: 0; }
+/* 高度用 clamp() 讓小視窗與大視窗都能拿到合理比例(視窗高度的22%),而不是不論解析度都套同一個
+   固定像素值——小螢幕不會被這個小記錄框獨占太多空間,大螢幕也不會小到看不了幾行。 */
+.log-list { height: clamp(120px, 22vh, 220px); max-height: clamp(120px, 22vh, 220px); overflow-y: auto; font-size: 13px; color: var(--ink-dim); display: flex; flex-direction: column-reverse; gap: 3px; min-height: 0; flex-shrink: 0; }
 
 .item-card { background: #241f16; border: 1px solid var(--panel-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; font-size: 14px; }
 .item-card.rarity-common { color: #b0b0b0; }
@@ -165,6 +188,11 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 /* 卡片式列表(地圖、配方、裝備清單等)改用自動換行的多欄網格,取代單欄一路往下排列 */
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
 .card-grid > .item-card { margin-bottom: 0; }
+
+/* 內容可能無上限成長的清單(背包、商店回收素材、交易所)給予「相對於視窗高度」的捲動上限,
+   讓清單本身在有限範圍內自行捲動,同一畫面其餘資訊(裝備欄、篩選按鈕等)不會被一起往下推走。
+   用 vh(視窗高度百分比)而非寫死像素,不同解析度螢幕都能拿到相同比例的可視範圍。 */
+.list-scroll { max-height: 55vh; overflow-y: auto; padding-right: 4px; }
 
 .stat-alloc-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
 .stat-alloc-row span { min-width: 90px; }

@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 import authRoutes from './routes/auth.js';
 import gameRoutes from './routes/game.js';
 import db from './db.js';
+import { exportSnapshot, importSnapshotIfEmpty } from './backup.js';
 import { computeStats, addLog, checkLevelUp } from './engine/characterEngine.js';
 import { depositFallenLoot } from './engine/fallenLootEngine.js';
 import { generateCommonGear } from './engine/itemEngine.js';
@@ -28,6 +29,13 @@ import {
 import { challenge, getPendingChallenge, declineChallenge, acceptChallenge, findDuelByUser, duelAttack, endDuel } from './engine/duelEngine.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'jianghu-dev-secret-please-change';
+// 備份急救端點的存取密碼:Render 免費方案無法讓我登入後台設定環境變數,故直接寫死在 render.yaml
+// (此 repo 為 Private,風險可接受)。之後遷移到 Turso 等永久資料庫後,這整套機制就可以退場。
+const ADMIN_BACKUP_TOKEN = process.env.ADMIN_BACKUP_TOKEN || 'jianghu-backup-dev-token';
+
+// 伺服器啟動時:如果資料庫是全新空的(容器休眠喚醒/重新部署後的常態),嘗試從隨 git 一起
+// 保留下來的 data-snapshot.json 自動還原玩家資料,把免費方案「沒有永久磁碟」的影響降到最低。
+importSnapshotIfEmpty();
 
 // 最後一道防線:任何沒被個別 try/catch 接住的例外,只記錄下來、不讓整個伺服器行程崩潰。
 // (先前實際發生過:決鬥結算一個打字錯誤讓整台伺服器當機,所有人瞬間斷線——不能再讓單一錯誤波及所有玩家。)
@@ -43,6 +51,13 @@ app.use(cors());
 app.use(express.json());
 app.use('/api/auth', authRoutes());
 app.use('/api/game', gameRoutes());
+
+// 存檔急救備份:受 token 保護,匯出全部資料表供人工存成 data-snapshot.json、commit 進版本控制。
+// 在真正遷移到外部持久化資料庫之前,這是唯一能讓資料撐過休眠/重新部署的方式。
+app.get('/api/admin/export', (req, res) => {
+  if (req.query.token !== ADMIN_BACKUP_TOKEN) return res.status(403).json({ error: '無權限' });
+  res.json(exportSnapshot());
+});
 
 // 正式環境:後端順便把前端打包後的靜態檔案(../dist,由 npm run build 產生)一起提供出去,
 // 這樣對外只需要開放/分享「一個」連接埠,不用另外處理前後端跨網域問題(方便用 Cloudflare Tunnel 這類工具分享)。

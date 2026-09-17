@@ -67,6 +67,19 @@ function h(tag, attrs = {}, children = []) {
   return el;
 }
 
+// 統一收尾:每個畫面都拆成「固定不動的標題/導覽列(headerNodes)」+「放不下才會內部捲動的主要內容
+// (scrollNodes)」。#app 本身鎖死在 100dvh(視窗高度)且不開放整頁捲動,所以捲軸只會出現在
+// .screen-scroll 這個區塊內、且高度是 flex 算出來的「視窗剩餘空間」而非寫死的像素值——不論使用者
+// 螢幕解析度多大多小,標題列與操作按鈕永遠留在原位,不會被一路往下的內容推到畫面外。
+function mount(headerNodes, scrollNodes) {
+  const root = document.createElement('div');
+  root.style.cssText = 'display:flex;flex-direction:column;height:100%;min-height:0;';
+  (headerNodes || []).forEach((n) => { if (n) root.appendChild(n); });
+  root.appendChild(h('div', { class: 'screen-scroll' }, (scrollNodes || []).filter((n) => n)));
+  app.innerHTML = '';
+  app.appendChild(root);
+}
+
 async function refreshState() {
   const res = await api.getState();
   S.state = res.state;
@@ -154,8 +167,7 @@ function renderAuth() {
       }, S.authMode === 'login' ? '改為註冊新帳號' : '改為登入既有帳號'),
     ]),
   ]);
-  app.innerHTML = '';
-  app.appendChild(box);
+  mount([], [box]);
 }
 
 // ---- 選擇職業 ----
@@ -178,8 +190,7 @@ function renderChooseClass() {
       ])
     ),
   ]);
-  app.innerHTML = '';
-  app.appendChild(box);
+  mount([], [box]);
 }
 
 // ---- 死亡結局畫面(決鬥生死戰用,不用原生 alert)----
@@ -199,8 +210,7 @@ function renderDeadScreen() {
       },
     }, '返回登入畫面'),
   ]);
-  app.innerHTML = '';
-  app.appendChild(box);
+  mount([], [box]);
 }
 
 // ---- 屬性配點 ----
@@ -246,11 +256,9 @@ function renderStatAllocator() {
 
 // ---- 城鎮(主畫面):歇息、藥水、地圖選擇、商店入口 ----
 function renderHub() {
-  const wrap = document.createElement('div');
-  wrap.appendChild(topBar());
   const s = S.state;
 
-  if (s.statPoints > 0) wrap.appendChild(renderStatAllocator());
+  const statAllocPanel = s.statPoints > 0 ? renderStatAllocator() : null;
 
   const missingHp = Math.max(0, s.maxHp - s.hp);
   const missingMp = Math.max(0, s.maxMp - s.mp);
@@ -293,17 +301,19 @@ function renderHub() {
     s.potions.every((p) => p.count === 0) ? h('div', { class: 'hint' }, '身上沒有任何藥水,可到雜貨店購買。') : null,
   ]);
 
-  // 技能一覽:先前技能只有戰鬥中才看得到,城鎮完全沒地方確認解鎖狀態,玩家升級後不知道去哪確認
+  // 技能一覽:先前技能只有戰鬥中才看得到,城鎮完全沒地方確認解鎖狀態,玩家升級後不知道去哪確認。
+  // 每招濃縮成一行(說明文字移到 title 提示,滑鼠停留才顯示),不佔用太多城鎮畫面的垂直空間。
   const SKILL_TYPE_LABEL = { single: '單體攻擊', aoe: '範圍攻擊', buff: 'BUFF', aura: '光環(被動)' };
   const skillList = [s.skills.basic, s.skills.aoe, s.skills.buff, s.skills.aura];
   const skillsPanel = h('div', { class: 'panel' }, [
     h('h3', {}, `技能(Lv.${s.level})`),
     ...skillList.map((sk) => {
       const unlocked = s.level >= sk.unlockLevel;
-      return h('div', { class: 'item-card' }, [
-        h('div', {}, `${unlocked ? '' : '🔒 '}${sk.name}(${SKILL_TYPE_LABEL[sk.type] || sk.type}${sk.mpCost != null ? `・MP${sk.mpCost}` : ''})`),
-        h('div', { class: 'hint' }, unlocked ? sk.desc : `Lv.${sk.unlockLevel} 解鎖 — ${sk.desc}`),
-      ]);
+      return h('div', {
+        class: 'item-card',
+        style: 'padding:5px 10px;',
+        title: unlocked ? sk.desc : `Lv.${sk.unlockLevel} 解鎖 — ${sk.desc}`,
+      }, `${unlocked ? '' : '🔒 '}${sk.name}(${SKILL_TYPE_LABEL[sk.type] || sk.type}${sk.mpCost != null ? `・MP${sk.mpCost}` : ''}${unlocked ? '' : `・Lv.${sk.unlockLevel}解鎖`})`);
     }),
   ]);
 
@@ -317,8 +327,12 @@ function renderHub() {
     h('div', { class: 'card-grid' }, s.maps.map((m) =>
       h('div', { class: 'item-card' }, [
         h('div', {}, `${m.name}(建議等級 Lv.${m.levelRange[0]}~${m.levelRange[1]},${m.minStages}~${m.maxStages}關)`),
-        h('div', { class: 'hint' }, `小王「${m.bossStatus.miniBoss.name}」:${bossStatusText(m.bossStatus.miniBoss)}`),
-        h('div', { class: 'hint' }, `大王「${m.bossStatus.boss.name}」:${bossStatusText(m.bossStatus.boss)}`),
+        // 小王/大王狀態併成一行(原本各佔一行)。王的名稱移到滑鼠提示(title),卡片上只留下最關鍵的
+        // 「現在能不能遇到」狀態,文字夠短才不會在較窄的卡片寬度下被迫換行、吃掉省下來的空間。
+        h('div', {
+          class: 'hint',
+          title: `小王「${m.bossStatus.miniBoss.name}」・大王「${m.bossStatus.boss.name}」`,
+        }, `小王${bossStatusText(m.bossStatus.miniBoss)}・大王${bossStatusText(m.bossStatus.boss)}`),
         h('button', {
           class: 'btn primary',
           onclick: async () => { try { S.bossEncounterAck = false; await api.huntStart(m.id); await refreshState(); } catch (e) { S.error = e.message; render(); } },
@@ -328,38 +342,30 @@ function renderHub() {
   ]);
 
   // 左欄:歇息/藥水/技能/商店(操作與資訊類、較短);右欄:地圖列表/戰果/事蹟(內容較長)——並排顯示減少整頁滾動
-  wrap.appendChild(h('div', { class: 'grid-2' }, [
+  const content = h('div', { class: 'grid-2' }, [
     h('div', {}, [restPanel, potionPanel, skillsPanel, shopsPanel]),
     h('div', {}, [
       mapsPanel,
       S.lastHuntLines.length ? h('div', { class: 'panel' }, [h('h3', {}, '戰果'), ...S.lastHuntLines.map((l) => h('div', {}, l))]) : null,
       logPanel(),
     ]),
-  ]));
-  if (S.error) wrap.appendChild(h('div', { class: 'error-msg' }, S.error));
-  app.innerHTML = '';
-  app.appendChild(wrap);
+  ]);
+  mount([topBar(), statAllocPanel], [content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 // ---- 闖蕩中的畫面調度:依 activeCombat / activeVenture 決定顯示內容 ----
 function renderVenture() {
-  const wrap = document.createElement('div');
-  wrap.appendChild(topBar());
   const s = S.state;
+  let content = [];
 
   if (s.activeCombat) {
-    wrap.appendChild(renderVentureProgress());
-    wrap.appendChild(s.activeCombat.isBossFight && !S.bossEncounterAck ? renderBossWarningPanel() : renderCombatPanel());
+    content = [renderVentureProgress(), s.activeCombat.isBossFight && !S.bossEncounterAck ? renderBossWarningPanel() : renderCombatPanel()];
   } else if (s.activeVenture?.pendingLootChoice) {
-    wrap.appendChild(renderVentureProgress());
-    wrap.appendChild(renderLootChoicePanel());
+    content = [renderVentureProgress(), renderLootChoicePanel()];
   } else if (s.activeVenture) {
-    wrap.appendChild(renderVentureProgress());
-    wrap.appendChild(renderVentureStagePanel());
+    content = [renderVentureProgress(), renderVentureStagePanel()];
   }
-  if (S.error) wrap.appendChild(h('div', { class: 'error-msg' }, S.error));
-  app.innerHTML = '';
-  app.appendChild(wrap);
+  mount([topBar()], [...content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 function renderVentureProgress() {
@@ -559,7 +565,8 @@ async function doCombatAction(action, extra = {}) {
 function logPanel() {
   return h('div', { class: 'panel' }, [
     h('h3', {}, '事蹟'),
-    h('div', { class: 'log-list' }, (S.state.log || []).map((l) => h('div', {}, l.text))),
+    // 城鎮的「事蹟」只是歷史記錄,不像戰鬥中的日誌那麼即時關鍵,給較矮的高度上限,把版面留給更常用的地圖列表。
+    h('div', { class: 'log-list', style: 'height:clamp(90px,14vh,160px);max-height:clamp(90px,14vh,160px);' }, (S.state.log || []).map((l) => h('div', {}, l.text))),
   ]);
 }
 
@@ -648,8 +655,6 @@ function renderEnhanceControls(item) {
 const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)' };
 
 function renderInventory() {
-  const wrap = document.createElement('div');
-  wrap.appendChild(topBar());
   const s = S.state;
 
   const equipPanel = h('div', { class: 'panel' }, [
@@ -680,7 +685,7 @@ function renderInventory() {
 
   const invPanel = h('div', { class: 'panel' }, [
     h('h3', {}, '背包(裝備)'),
-    h('div', { class: 'card-grid' }, s.inventory.map((item) => {
+    h('div', { class: 'card-grid list-scroll' }, s.inventory.map((item) => {
       // 飾品是通用格(accessory),裝備時要讓玩家自己選放飾品一還是飾品二;
       // 武器/防具(或舊資料殘留的 accessory1/accessory2)維持單一「裝備」按鈕。
       const equipButtons = item.slot === 'accessory'
@@ -715,13 +720,11 @@ function renderInventory() {
   ]);
 
   // 左欄:裝備欄+材料(較短、資訊型);右欄:背包裝備清單(項目多,並排能少滾很多)
-  wrap.appendChild(h('div', { class: 'grid-2' }, [
+  const content = h('div', { class: 'grid-2' }, [
     h('div', {}, [equipPanel, materialsPanel]),
     h('div', {}, [invPanel]),
-  ]));
-  if (S.error) wrap.appendChild(h('div', { class: 'error-msg' }, S.error));
-  app.innerHTML = '';
-  app.appendChild(wrap);
+  ]);
+  mount([topBar()], [content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 async function refreshInvState() {
@@ -744,8 +747,6 @@ async function openShop(shopId) {
 }
 
 function renderShop() {
-  const wrap = document.createElement('div');
-  wrap.appendChild(topBar());
   const shopId = S.shopId;
   const data = S.shopData;
 
@@ -805,7 +806,7 @@ function renderShop() {
         render();
       } catch (e) { S.error = e.message; render(); }
     };
-    panel.appendChild(h('div', { class: 'card-grid' }, mySellables.map((m) => {
+    panel.appendChild(h('div', { class: 'card-grid list-scroll' }, mySellables.map((m) => {
       const marketInfo = data.market.sellables.find((j) => j.id === m.id);
       const qtyInputId = `sell-qty-${m.id}`;
       return h('div', { class: 'item-card' }, [
@@ -856,11 +857,7 @@ function renderShop() {
     });
   }
 
-  wrap.appendChild(panel);
-  if (S.error) wrap.appendChild(h('div', { class: 'error-msg' }, S.error));
-  wrap.appendChild(h('button', { class: 'btn', onclick: () => { S.view = 'hub'; render(); } }, '返回城鎮'));
-  app.innerHTML = '';
-  app.appendChild(wrap);
+  mount([topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null, h('button', { class: 'btn', onclick: () => { S.view = 'hub'; render(); } }, '返回城鎮')]);
 }
 
 // ---- 交易所 ----
@@ -874,13 +871,10 @@ async function openAuction() {
 }
 
 function renderAuction() {
-  const wrap = document.createElement('div');
-  wrap.appendChild(topBar());
-
   const panel = h('div', { class: 'panel' }, [
     h('h3', {}, '交易所'),
     h('p', { class: 'hint' }, '玩家互相上架/購買裝備,上架收取開價 5% 手續費,24 小時後自動下架。'),
-    h('div', { class: 'card-grid' }, S.auctionListings.map((l) =>
+    h('div', { class: 'card-grid list-scroll' }, S.auctionListings.map((l) =>
       h('div', { class: 'item-card' }, [
         h('div', {}, `${l.item.name}(${itemTierLabel(l.item.tier)}) Lv${l.item.itemLevel} — 賣家:${l.sellerName} — 開價 ${l.price} 金幣`),
         l.sellerName === S.username
@@ -890,16 +884,11 @@ function renderAuction() {
     )),
     S.auctionListings.length === 0 ? h('div', { class: 'hint' }, '目前沒有任何上架物品。') : null,
   ]);
-  wrap.appendChild(panel);
-  if (S.error) wrap.appendChild(h('div', { class: 'error-msg' }, S.error));
-  app.innerHTML = '';
-  app.appendChild(wrap);
+  mount([topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 // ---- 組隊副本畫面 ----
 function renderParty() {
-  const wrap = document.createElement('div');
-  wrap.appendChild(topBar());
   const sock = connectSocket();
   bindPartySocket(sock);
 
@@ -923,10 +912,7 @@ function renderParty() {
     ]),
     S.party?.combat ? renderPartyCombat(S.party.combat) : null,
   ]);
-  wrap.appendChild(panel);
-  if (S.error) wrap.appendChild(h('div', { class: 'error-msg' }, S.error));
-  app.innerHTML = '';
-  app.appendChild(wrap);
+  mount([topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 function renderPartyCombat(combat) {
@@ -1010,8 +996,6 @@ function bindPartySocket(sock) {
 
 // ---- 決鬥畫面 ----
 function renderDuel() {
-  const wrap = document.createElement('div');
-  wrap.appendChild(topBar());
   const sock = connectSocket();
   bindDuelSocket(sock);
 
@@ -1034,9 +1018,7 @@ function renderDuel() {
     ]) : renderDuelCombat(),
     S.duelMsg ? h('div', { class: 'error-msg' }, S.duelMsg) : null,
   ]);
-  wrap.appendChild(panel);
-  app.innerHTML = '';
-  app.appendChild(wrap);
+  mount([topBar()], [panel]);
 }
 
 function renderDuelCombat() {
