@@ -8,7 +8,14 @@ services:
     envVars:
       - key: JWT_SECRET
         generateValue: true
+      # 這個 repository 是 Public(公開),絕對不能把真實密鑰明文寫在這裡讓所有人看到。
+      # sync: false 代表「這個環境變數存在,但值必須自己到 Render 後台的 Environment 分頁手動輸入」,
+      # Render 不會把值存進這份可被任何人讀到的 render.yaml。見 DEPLOY.md 的設定說明。
       - key: ADMIN_BACKUP_TOKEN
-        value: GXOJucU8rPRQEADiblp5Yd1kz4KfjtwL
+        sync: false
+      - key: TURSO_DATABASE_URL
+        sync: false
+      - key: TURSO_AUTH_TOKEN
+        sync: false
       - key: NODE_VERSION
         value: "24"

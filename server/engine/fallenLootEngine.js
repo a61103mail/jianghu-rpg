@@ -8,30 +8,30 @@ const randomOneStmt = db.prepare('SELECT * FROM fallen_loot ORDER BY RANDOM() LI
 const deleteByIdStmt = db.prepare('DELETE FROM fallen_loot WHERE id = ?');
 
 // 玩家死亡時呼叫:蒐集其裝備欄+背包內的裝備類物品(材料/藥水不列入,避免遺物列表過長),存成一筆遺物紀錄
-export function depositFallenLoot(username, save) {
+export async function depositFallenLoot(username, save) {
   const items = [];
   Object.values(save.equipment || {}).forEach((item) => {
     if (item) items.push(item);
   });
   (save.inventory || []).forEach((item) => items.push(item));
   if (items.length === 0) return;
-  insertStmt.run(username, JSON.stringify(items), new Date().toISOString());
+  await insertStmt.run(username, JSON.stringify(items), new Date().toISOString());
 }
 
-export function hasFallenLoot() {
-  return countStmt.get().c > 0;
+export async function hasFallenLoot() {
+  return (await countStmt.get()).c > 0;
 }
 
 // 隨機取得一筆遺物紀錄(供奇遇事件展示選擇用),不會刪除——需玩家實際選擇後才呼叫 claimFallenLoot 刪除
-export function peekRandomFallenLoot() {
-  const row = randomOneStmt.get();
+export async function peekRandomFallenLoot() {
+  const row = await randomOneStmt.get();
   if (!row) return null;
   return { id: row.id, fallenUsername: row.fallen_username, items: JSON.parse(row.items_json) };
 }
 
 // 玩家挑選其中一件帶走後,整筆遺物紀錄即消散(其餘未被選走的物品不會留下)。
 // 回傳是否確實刪除成功——若同一份遺物已被其他玩家搶先拾獲(見 game.js 的競態處理),回傳 false。
-export function claimFallenLoot(id) {
-  const result = deleteByIdStmt.run(id);
+export async function claimFallenLoot(id) {
+  const result = await deleteByIdStmt.run(id);
   return result.changes > 0;
 }

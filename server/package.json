@@ -10,6 +10,7 @@
     "dev": "node --watch-path=./index.js --watch-path=./db.js --watch-path=./routes --watch-path=./engine --watch-path=./data index.js"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.19.2",

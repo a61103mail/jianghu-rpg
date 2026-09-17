@@ -23,8 +23,8 @@ function defaultMarket() {
   return { stock: {}, bonusPotionStock: {}, lastDecayAt: Date.now() };
 }
 
-function saveMarket(market) {
-  putMarketStmt.run(JSON.stringify(market), new Date().toISOString());
+async function saveMarket(market) {
+  await putMarketStmt.run(JSON.stringify(market), new Date().toISOString());
 }
 
 function runDecayTick(market) {
@@ -45,8 +45,8 @@ function runDecayTick(market) {
 
 // 讀取市場狀態,並依實際經過時間補算漏掉的銷毀週期(即使伺服器重啟過也能追上進度)。
 // 只要補算到任何週期,立即存回資料庫,避免下次讀取時在同一段時間內重複套用衰減。
-function loadMarket() {
-  const row = getMarketStmt.get();
+async function loadMarket() {
+  const row = await getMarketStmt.get();
   const market = row ? JSON.parse(row.data) : defaultMarket();
   const now = Date.now();
   let ticks = Math.floor((now - market.lastDecayAt) / DECAY_INTERVAL_MS);
@@ -54,9 +54,9 @@ function loadMarket() {
     ticks = Math.min(ticks, 500); // 避免離線超久時一次跑出天文數字的迴圈次數
     for (let i = 0; i < ticks; i += 1) runDecayTick(market);
     market.lastDecayAt += ticks * DECAY_INTERVAL_MS;
-    saveMarket(market);
+    await saveMarket(market);
   } else if (!row) {
-    saveMarket(market);
+    await saveMarket(market);
   }
   return market;
 }
@@ -65,25 +65,25 @@ function priceForStock(basePrice, stock) {
   return Math.max(1, Math.round(basePrice * Math.max(STOCK_PRICE_FLOOR_PCT, 1 - stock / STOCK_DECAY_THRESHOLD)));
 }
 
-export function getRecyclePrice(itemId) {
-  const market = loadMarket();
+export async function getRecyclePrice(itemId) {
+  const market = await loadMarket();
   const item = ITEMS[itemId];
   if (!item || !SELLABLE_KINDS.includes(item.kind)) return 0;
   return priceForStock(item.basePrice, market.stock[itemId] || 0);
 }
 
 // 出售雜物/材料/稀有材料給雜貨店,回傳實際獲得的金幣(以出售當下的價格計算整批,而非賣一件跌一次價)
-export function sellItemToMarket(itemId, qty) {
-  const market = loadMarket();
+export async function sellItemToMarket(itemId, qty) {
+  const market = await loadMarket();
   const item = ITEMS[itemId];
   const unitPrice = priceForStock(item.basePrice, market.stock[itemId] || 0);
   market.stock[itemId] = (market.stock[itemId] || 0) + qty;
-  saveMarket(market);
+  await saveMarket(market);
   return unitPrice * qty;
 }
 
-export function getPotionPriceInfo(potionId) {
-  const market = loadMarket();
+export async function getPotionPriceInfo(potionId) {
+  const market = await loadMarket();
   const potion = getPotion(potionId);
   const bonus = market.bonusPotionStock[potionId] || 0;
   return {
@@ -95,8 +95,8 @@ export function getPotionPriceInfo(potionId) {
 }
 
 // 購買藥水,優先消耗特惠庫存(半價),超出特惠庫存的部分以原價計算,回傳總花費金幣
-export function buyPotionFromMarket(potionId, qty) {
-  const market = loadMarket();
+export async function buyPotionFromMarket(potionId, qty) {
+  const market = await loadMarket();
   const potion = getPotion(potionId);
   const bonus = market.bonusPotionStock[potionId] || 0;
   const discountedQty = Math.min(bonus, qty);
@@ -104,12 +104,12 @@ export function buyPotionFromMarket(potionId, qty) {
   const discountedUnit = Math.ceil(potion.price * (1 - DISCOUNT_PCT));
   const totalCost = discountedQty * discountedUnit + fullQty * potion.price;
   market.bonusPotionStock[potionId] = bonus - discountedQty;
-  saveMarket(market);
+  await saveMarket(market);
   return totalCost;
 }
 
-export function getMarketSnapshot() {
-  const market = loadMarket();
+export async function getMarketSnapshot() {
+  const market = await loadMarket();
   const sellables = Object.entries(ITEMS)
     .filter(([, item]) => SELLABLE_KINDS.includes(item.kind))
     .map(([id, item]) => ({

@@ -39,8 +39,8 @@ function overlevelPenaltyMultiplier(playerLevel, map) {
   return Math.max(0.15, 1 - gap * 0.12);
 }
 
-function loadSave(userId) {
-  const row = getSaveStmt.get(userId);
+async function loadSave(userId) {
+  const row = await getSaveStmt.get(userId);
   if (!row) return null;
   const save = JSON.parse(row.data);
   if (!save.materials) save.materials = {};
@@ -76,8 +76,8 @@ function loadSave(userId) {
   return save;
 }
 
-function saveGame(userId, save) {
-  putSaveStmt.run(userId, JSON.stringify(save), new Date().toISOString());
+async function saveGame(userId, save) {
+  await putSaveStmt.run(userId, JSON.stringify(save), new Date().toISOString());
 }
 
 function publicState(save) {
@@ -233,9 +233,9 @@ function hasSellableAssets(save) {
 // 奇遇事件結算。多數情況回傳純敘事文字(lines);但若恰好觸發「拾獲遺物」分支(僅在資料庫內
 // 確實存在陣亡玩家的遺物時才可能抽到),則額外回傳 lootChoice,要求玩家從中挑選一件帶走,
 // 呼叫端(advanceVentureStage)需暫停旅程進度、等玩家選擇後才能繼續。
-function resolveEventStage(save, map) {
-  if (hasFallenLoot() && Math.random() < 0.15) {
-    const loot = peekRandomFallenLoot();
+async function resolveEventStage(save, map) {
+  if ((await hasFallenLoot()) && Math.random() < 0.15) {
+    const loot = await peekRandomFallenLoot();
     if (loot && loot.items.length > 0) {
       const offered = pickRandomSubset(loot.items, FALLEN_LOOT_CHOICE_COUNT);
       return {
@@ -308,7 +308,7 @@ function resolveEventStage(save, map) {
   return { lines };
 }
 
-function advanceVentureStage(save, map) {
+async function advanceVentureStage(save, map) {
   const venture = save.activeVenture;
   const stageLabel = `第 ${venture.stageIndex + 1}/${venture.totalStages} 關`;
   const roll = Math.random();
@@ -330,7 +330,7 @@ function advanceVentureStage(save, map) {
     venture.lastStageLines = [`—— ${stageLabel}:採集 ——`, ...lines];
     venture.pendingContinue = true;
   } else {
-    const result = resolveEventStage(save, map);
+    const result = await resolveEventStage(save, map);
     venture.lastStageLines = [`—— ${stageLabel}:奇遇 ——`, ...result.lines];
     if (result.lootChoice) {
       venture.pendingLootChoice = result.lootChoice;
@@ -353,7 +353,7 @@ export default function gameRoutes() {
   const router = Router();
 
   // 公開資訊(不需登入):供創角畫面顯示職業選項、技能說明、配點建議
-  router.get('/classes', (req, res) => {
+  router.get('/classes', async (req, res) => {
     res.json({
       classes: CLASS_ORDER.map((id) => {
         const c = getClass(id);
@@ -365,50 +365,50 @@ export default function gameRoutes() {
 
   router.use(authMiddleware);
 
-  router.get('/state', (req, res) => {
-    const save = loadSave(req.user.userId);
+  router.get('/state', async (req, res) => {
+    const save = await loadSave(req.user.userId);
     if (!save) return res.status(404).json({ error: '找不到存檔' });
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 
   // 選擇職業(首次進入遊戲時呼叫一次)
-  router.post('/choose-class', (req, res) => {
+  router.post('/choose-class', async (req, res) => {
     const { classId } = req.body || {};
     if (!CLASS_ORDER.includes(classId)) return res.status(400).json({ error: '無效的職業' });
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     save.classId = classId;
     save.classChosen = true;
     const stats = computeStats(save);
     save.hp = stats.maxHp;
     save.mp = stats.maxMp;
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 
   // 屬性配點:每次升級可得 5 點自由分配,點入 STR/DEX/INT/LUK 任意組合
-  router.post('/stats/allocate', (req, res) => {
+  router.post('/stats/allocate', async (req, res) => {
     const { str = 0, dex = 0, int: intPts = 0, luk = 0 } = req.body || {};
     const parts = [str, dex, intPts, luk].map((v) => Number(v) || 0);
     if (parts.some((v) => v < 0)) return res.status(400).json({ error: '加點數值不可為負' });
     const total = parts.reduce((a, b) => a + b, 0);
     if (total <= 0) return res.status(400).json({ error: '未指定任何加點' });
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     if (total > save.statPoints) return res.status(400).json({ error: `可用屬性點不足(剩餘 ${save.statPoints} 點)` });
     save.allocatedStats.str += parts[0];
     save.allocatedStats.dex += parts[1];
     save.allocatedStats.int += parts[2];
     save.allocatedStats.luk += parts[3];
     save.statPoints -= total;
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 
   // ---- 城鎮:歇息(依實際花費的金幣比例回復氣血/真力,不是全有全無——
   // 金幣不夠付「全額」也能歇息,花多少錢就回多少狀態;不指定金額時預設「有多少花多少」)----
-  router.post('/town/rest', (req, res) => {
+  router.post('/town/rest', async (req, res) => {
     const { goldToSpend } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     if (save.activeCombat || save.activeVenture) return res.status(400).json({ error: '旅程尚未結束' });
     const stats = computeStats(save);
     const missingHp = Math.max(0, stats.maxHp - save.hp);
@@ -424,42 +424,42 @@ export default function gameRoutes() {
     save.mp = Math.min(stats.maxMp, save.mp + Math.round(missingMp * fraction));
     const healedPct = Math.round(fraction * 100);
     addLog(save, `於城鎮歇息,花費 ${spend} 枚金幣,氣血真力恢復了 ${healedPct}%。`);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), spent: spend, healedPct });
   });
 
-  router.post('/consumable/use-potion', (req, res) => {
+  router.post('/consumable/use-potion', async (req, res) => {
     const { potionId } = req.body || {};
     const potion = getPotion(potionId);
     if (!potion) return res.status(400).json({ error: '無此藥水' });
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     if (save.activeCombat) return res.status(400).json({ error: '戰鬥中請在戰鬥畫面使用藥水' });
     if (!(save.potions[potionId] > 0)) return res.status(400).json({ error: '藥水數量不足' });
     const stats = computeStats(save);
     save.potions[potionId] -= 1;
     if (potion.kind === 'hp') save.hp = Math.min(stats.maxHp, save.hp + Math.round(stats.maxHp * potion.healPct));
     else save.mp = Math.min(stats.maxMp, save.mp + Math.round(stats.maxMp * potion.healPct));
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 
   // ---- 闖蕩(多關卡旅程:戰鬥/採集/奇遇交錯)----
-  router.post('/hunt/start', (req, res) => {
+  router.post('/hunt/start', async (req, res) => {
     const { mapId } = req.body || {};
     const map = getMap(mapId);
     if (!map) return res.status(400).json({ error: '無此地圖' });
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     if (save.activeCombat || save.activeVenture) return res.status(400).json({ error: '旅程尚未結束' });
     if (save.hp <= 0) return res.status(400).json({ error: '氣血已盡,請先回城鎮歇息' });
     save.currentMapId = map.id;
     save.activeVenture = generateVenture(map);
-    advanceVentureStage(save, map);
-    saveGame(req.user.userId, save);
+    await advanceVentureStage(save, map);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 
-  router.post('/hunt/continue', (req, res) => {
-    const save = loadSave(req.user.userId);
+  router.post('/hunt/continue', async (req, res) => {
+    const save = await loadSave(req.user.userId);
     const venture = save.activeVenture;
     if (!venture) return res.status(400).json({ error: '目前沒有進行中的旅程' });
     if (save.activeCombat) return res.status(400).json({ error: '戰鬥尚未結束' });
@@ -475,19 +475,19 @@ export default function gameRoutes() {
       const lines = [...venture.log, `旅程完滿結束(共 ${venture.totalStages} 關)!額外獲得 ${venture.bonusExpPool} 點旅程獎勵經驗。`];
       if (leveledTo) lines.push(`升級了!目前等級 Lv.${leveledTo},獲得 ${STAT_POINTS_PER_LEVEL} 點自由屬性點。`);
       save.activeVenture = null;
-      saveGame(req.user.userId, save);
+      await saveGame(req.user.userId, save);
       return res.json({ state: publicState(save), ventureEnded: 'complete', lines });
     }
     const map = getMap(venture.mapId);
-    advanceVentureStage(save, map);
-    saveGame(req.user.userId, save);
+    await advanceVentureStage(save, map);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), lines: save.activeCombat ? [] : venture.lastStageLines });
   });
 
   // 中途撤退:結束旅程但保留已完成關卡的進度獎勵(依比例發放旅程獎勵經驗,走完才是100%,見 bonusExpPool)。
   // 只能在非戰鬥、非待選遺物的安全時機使用(戰鬥中要離開請用「脫身」,有失敗機率)。
-  router.post('/hunt/retreat', (req, res) => {
-    const save = loadSave(req.user.userId);
+  router.post('/hunt/retreat', async (req, res) => {
+    const save = await loadSave(req.user.userId);
     const venture = save.activeVenture;
     if (!venture) return res.status(400).json({ error: '目前沒有進行中的旅程' });
     if (save.activeCombat) return res.status(400).json({ error: '戰鬥中無法直接撤退,請使用「脫身」' });
@@ -499,42 +499,42 @@ export default function gameRoutes() {
     if (leveledTo) lines.push(`升級了!目前等級 Lv.${leveledTo},獲得 ${STAT_POINTS_PER_LEVEL} 點自由屬性點。`);
     addLog(save, `提前結束了${venture.mapName}的旅程(完成 ${venture.stageIndex}/${venture.totalStages} 關)。`);
     save.activeVenture = null;
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), ventureEnded: 'retreat', lines });
   });
 
   // 拾獲遺物:從奇遇事件展示的選項中挑選一件帶走,其餘遺物隨之消散(不會留給下次再選)
-  router.post('/hunt/loot-choice', (req, res) => {
+  router.post('/hunt/loot-choice', async (req, res) => {
     const { itemIndex } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const venture = save.activeVenture;
     const choice = venture?.pendingLootChoice;
     if (!choice) return res.status(400).json({ error: '目前沒有待選擇的遺物' });
     const item = choice.items[itemIndex];
     if (!item) return res.status(400).json({ error: '無效的選擇' });
 
-    const claimed = claimFallenLoot(choice.lootId);
+    const claimed = await claimFallenLoot(choice.lootId);
     venture.pendingLootChoice = null;
     venture.pendingContinue = true;
     if (!claimed) {
       // 極少數情況:同一份遺物在你選擇前已被其他玩家搶先拾獲
       const lines = ['可惜,這份遺物已被他人搶先拾獲了。'];
       venture.lastStageLines.push(...lines);
-      saveGame(req.user.userId, save);
+      await saveGame(req.user.userId, save);
       return res.json({ state: publicState(save), lines });
     }
     save.inventory.push(item);
     addLog(save, `拾得「${choice.fallenUsername}」的遺物:${item.name}。`);
     const lines = [`你拾起了「${item.name}」,其餘遺物則隨風而逝。`];
     venture.lastStageLines.push(...lines);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), lines });
   });
 
   // 戰鬥回合:'basic'/'aoe'/'buff'(職業技能)、'potion'(戰鬥中使用藥水)、'flee'(脫身),支援多敵人同場作戰。
-  router.post('/combat/action', (req, res) => {
+  router.post('/combat/action', async (req, res) => {
     const { action, targetIndex, potionId } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const combat = save.activeCombat;
     if (!combat) return res.status(400).json({ error: '目前沒有進行中的戰鬥' });
 
@@ -552,7 +552,7 @@ export default function gameRoutes() {
         save.mp = combat.playerMp;
         save.activeCombat = null;
         save.activeVenture = null;
-        saveGame(req.user.userId, save);
+        await saveGame(req.user.userId, save);
         return res.json({ state: publicState(save), combatEnded: 'fled', lines });
       }
       lines.push('你想脫身,卻被纏住,無法脫身!');
@@ -769,16 +769,16 @@ export default function gameRoutes() {
       save.activeVenture = null;
     }
 
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), combatEnded, lines });
   });
 
   // ---- 裝備 ----
   // 裝備:武器/防具直接對應各自唯一的欄位;飾品是通用的 accessory,實際要放飾品一還是飾品二
   // 由前端傳入 targetSlot 指定——沒指定的話優先放空格,兩格都滿則預設放飾品一。
-  router.post('/equipment/equip', (req, res) => {
+  router.post('/equipment/equip', async (req, res) => {
     const { itemId, targetSlot } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const idx = save.inventory.findIndex((i) => i.id === itemId);
     if (idx === -1) return res.status(404).json({ error: '背包內找不到該裝備' });
     const item = save.inventory[idx];
@@ -801,29 +801,29 @@ export default function gameRoutes() {
     save.equipment[equipSlot] = item;
     save.inventory.splice(idx, 1);
     if (prev) save.inventory.push(prev);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 
-  router.post('/equipment/unequip', (req, res) => {
+  router.post('/equipment/unequip', async (req, res) => {
     const { slot } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const item = save.equipment[slot];
     if (!item) return res.status(404).json({ error: '該部位沒有裝備' });
     save.equipment[slot] = null;
     save.inventory.push(item);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 
   // ---- 商店 ----
-  router.get('/shop/:shopId', (req, res) => {
+  router.get('/shop/:shopId', async (req, res) => {
     const shop = getShop(req.params.shopId);
     if (!shop) return res.status(404).json({ error: '無此商店' });
     if (shop.id === 'general') {
-      return res.json({ shop, market: getMarketSnapshot() });
+      return res.json({ shop, market: await getMarketSnapshot() });
     }
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     // 配方的材料需求原本只有英文 id,前端無法直接顯示——這裡補上中文名稱與玩家目前持有數量,
     // 前端就能直接秀出「鐵礦 3/5」這種一目瞭然的格式,不用自己再查一次物品表。
     const recipes = getRareRecipes(shop.id).map((r) => ({
@@ -838,9 +838,9 @@ export default function gameRoutes() {
 
   // 雜貨店回收:賣雜物/一般素材/稀有素材(是否留著製作或賣錢由玩家自行決定)或賣掉背包中的普通裝備
   // (稀有/超稀有裝備不可直接賣店,只能上架交易所)
-  router.post('/shop/sell', (req, res) => {
+  router.post('/shop/sell', async (req, res) => {
     const { itemId, qty, inventoryItemId } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     if (inventoryItemId) {
       const idx = save.inventory.findIndex((i) => i.id === inventoryItemId);
       if (idx === -1) return res.status(404).json({ error: '背包內找不到該物品' });
@@ -849,7 +849,7 @@ export default function gameRoutes() {
       const price = item.itemLevel * 2;
       save.inventory.splice(idx, 1);
       save.gold += price;
-      saveGame(req.user.userId, save);
+      await saveGame(req.user.userId, save);
       return res.json({ state: publicState(save), earned: price });
     }
     const item = getItem(itemId);
@@ -857,41 +857,41 @@ export default function gameRoutes() {
     const have = save.materials[itemId] || 0;
     const sellQty = Math.min(Math.max(1, qty || 1), have);
     if (sellQty <= 0) return res.status(400).json({ error: '數量不足' });
-    const earned = sellItemToMarket(itemId, sellQty);
+    const earned = await sellItemToMarket(itemId, sellQty);
     save.materials[itemId] -= sellQty;
     save.gold += earned;
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), earned });
   });
 
-  router.post('/shop/buy-potion', (req, res) => {
+  router.post('/shop/buy-potion', async (req, res) => {
     const { potionId, qty } = req.body || {};
     const potion = getPotion(potionId);
     if (!potion) return res.status(400).json({ error: '無此藥水' });
     const amount = Math.max(1, Math.min(99, Math.floor(qty) || 1));
-    const save = loadSave(req.user.userId);
-    const priceInfo = getPotionPriceInfo(potionId);
+    const save = await loadSave(req.user.userId);
+    const priceInfo = await getPotionPriceInfo(potionId);
     if (save.gold < priceInfo.effectivePrice * amount) return res.status(400).json({ error: '金幣不足' });
-    const cost = buyPotionFromMarket(potionId, amount);
+    const cost = await buyPotionFromMarket(potionId, amount);
     if (save.gold < cost) return res.status(400).json({ error: '金幣不足(價格已變動,請重新嘗試)' });
     save.gold -= cost;
     save.potions[potionId] = (save.potions[potionId] || 0) + amount;
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), bought: amount, cost });
   });
 
   // 購買強化卷軸/潛能方塊:固定金幣價格,存放於 save.consumables(跟藥水分開,避免混淆)
-  router.post('/shop/buy-enhance-item', (req, res) => {
+  router.post('/shop/buy-enhance-item', async (req, res) => {
     const { itemId, qty } = req.body || {};
     const enhanceItem = getEnhanceItem(itemId);
     if (!enhanceItem) return res.status(400).json({ error: '無此物品' });
     const amount = Math.max(1, Math.min(99, Math.floor(qty) || 1));
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const cost = enhanceItem.price * amount;
     if (save.gold < cost) return res.status(400).json({ error: '金幣不足' });
     save.gold -= cost;
     save.consumables[itemId] = (save.consumables[itemId] || 0) + amount;
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), bought: amount, cost });
   });
 
@@ -904,9 +904,9 @@ export default function gameRoutes() {
   }
 
   // 裝備強化:消耗一張卷軸,依目前強化等級判定成功率,成功則 +1 等級並增加固定數值(失敗只損失卷軸,不會摧毀裝備)
-  router.post('/equipment/enhance', (req, res) => {
+  router.post('/equipment/enhance', async (req, res) => {
     const { itemId, scrollId } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const item = findEquippedOrInventoryItem(save, itemId);
     if (!item) return res.status(404).json({ error: '找不到該裝備' });
     const scroll = getEnhanceItem(scrollId);
@@ -917,14 +917,14 @@ export default function gameRoutes() {
     save.consumables[scrollId] -= 1;
     const result = rollEnhance(item);
     addLog(save, result.success ? `強化「${item.name}」成功,提升至 +${item.enhanceLevel}!` : `強化「${item.name}」失敗,卷軸已耗盡。`);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), success: result.success, rate: result.rate, item });
   });
 
   // 潛能洗鍊:消耗一顆方塊,沒有潛能就從稀有開始,已有則重洗詞條並有機率升階
-  router.post('/equipment/cube', (req, res) => {
+  router.post('/equipment/cube', async (req, res) => {
     const { itemId, cubeId } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const item = findEquippedOrInventoryItem(save, itemId);
     if (!item) return res.status(404).json({ error: '找不到該裝備' });
     const cube = getEnhanceItem(cubeId);
@@ -933,18 +933,18 @@ export default function gameRoutes() {
     save.consumables[cubeId] -= 1;
     const result = rollCube(item);
     addLog(save, `為「${item.name}」洗鍊潛能${result.upgraded ? `,升階至【${getTierNameZh(item.potential.tier)}】!` : '。'}`);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), upgraded: result.upgraded, item });
   });
 
   // 稀有裝備製作:僅能在對應商店(blacksmith/leather/magic/church)進行,只看素材+金幣是否足夠,
   // 不設等級門檻——有材料就能做,不因為等級不夠而卡關。
-  router.post('/shop/craft', (req, res) => {
+  router.post('/shop/craft', async (req, res) => {
     const { shopId, recipeId } = req.body || {};
     const recipes = getRareRecipes(shopId);
     const recipe = recipes.find((r) => r.id === recipeId);
     if (!recipe) return res.status(400).json({ error: '無此配方' });
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     if (save.gold < recipe.gold) return res.status(400).json({ error: '金幣不足' });
     const missing = Object.entries(recipe.materials).filter(([matId, need]) => (save.materials[matId] || 0) < need);
     if (missing.length > 0) {
@@ -956,18 +956,18 @@ export default function gameRoutes() {
     const item = craftRareItem(shopId, recipe);
     save.inventory.push(item);
     addLog(save, `於${getShop(shopId).name}打造出「${item.name}」!`);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), crafted: item });
   });
 
   // ---- 玩家交易所 ----
-  router.get('/auction/listings', (req, res) => {
-    res.json({ listings: getListings(), feePct: LISTING_FEE_PCT });
+  router.get('/auction/listings', async (req, res) => {
+    res.json({ listings: await getListings(), feePct: LISTING_FEE_PCT });
   });
 
-  router.post('/auction/list', (req, res) => {
+  router.post('/auction/list', async (req, res) => {
     const { itemId, price } = req.body || {};
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     const idx = save.inventory.findIndex((i) => i.id === itemId);
     if (idx === -1) return res.status(404).json({ error: '背包內找不到該物品(請先卸下裝備)' });
     const numPrice = Math.round(Number(price));
@@ -976,42 +976,42 @@ export default function gameRoutes() {
     if (save.gold < fee) return res.status(400).json({ error: `金幣不足,上架手續費需 ${fee} 枚` });
     const [item] = save.inventory.splice(idx, 1);
     save.gold -= fee;
-    listItem(req.user.userId, req.user.username, item, numPrice);
-    saveGame(req.user.userId, save);
+    await listItem(req.user.userId, req.user.username, item, numPrice);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), fee });
   });
 
-  router.post('/auction/buy', (req, res) => {
+  router.post('/auction/buy', async (req, res) => {
     const { listingId } = req.body || {};
-    const listing = getListingById(listingId);
+    const listing = await getListingById(listingId);
     if (!listing) return res.status(404).json({ error: '此上架物品已不存在(可能已售出或過期)' });
     if (listing.sellerId === req.user.userId) return res.status(400).json({ error: '不能購買自己上架的物品' });
-    const save = loadSave(req.user.userId);
+    const save = await loadSave(req.user.userId);
     if (save.gold < listing.price) return res.status(400).json({ error: '金幣不足' });
-    removeListing(listingId);
+    await removeListing(listingId);
     save.gold -= listing.price;
     save.inventory.push(listing.item);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
 
-    const sellerRow = getSaveStmt.get(listing.sellerId);
+    const sellerRow = await getSaveStmt.get(listing.sellerId);
     if (sellerRow) {
       const sellerSave = JSON.parse(sellerRow.data);
       sellerSave.gold += listing.price;
       addLog(sellerSave, `你上架的「${listing.item.name}」被 ${req.user.username} 以 ${listing.price} 枚金幣購入。`);
-      saveGame(listing.sellerId, sellerSave);
+      await saveGame(listing.sellerId, sellerSave);
     }
     res.json({ state: publicState(save) });
   });
 
-  router.post('/auction/cancel', (req, res) => {
+  router.post('/auction/cancel', async (req, res) => {
     const { listingId } = req.body || {};
-    const listing = getListingById(listingId);
+    const listing = await getListingById(listingId);
     if (!listing) return res.status(404).json({ error: '此上架物品已不存在' });
     if (listing.sellerId !== req.user.userId) return res.status(403).json({ error: '這不是你上架的物品' });
-    removeListing(listingId);
-    const save = loadSave(req.user.userId);
+    await removeListing(listingId);
+    const save = await loadSave(req.user.userId);
     save.inventory.push(listing.item);
-    saveGame(req.user.userId, save);
+    await saveGame(req.user.userId, save);
     res.json({ state: publicState(save) });
   });
 

@@ -29,13 +29,16 @@ import {
 import { challenge, getPendingChallenge, declineChallenge, acceptChallenge, findDuelByUser, duelAttack, endDuel } from './engine/duelEngine.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'jianghu-dev-secret-please-change';
-// 備份急救端點的存取密碼:Render 免費方案無法讓我登入後台設定環境變數,故直接寫死在 render.yaml
-// (此 repo 為 Private,風險可接受)。之後遷移到 Turso 等永久資料庫後,這整套機制就可以退場。
-const ADMIN_BACKUP_TOKEN = process.env.ADMIN_BACKUP_TOKEN || 'jianghu-backup-dev-token';
+// 備份急救端點的存取密碼:此 repository 是 Public(公開)的,絕對不能在程式碼裡寫死一個「預設值」
+// 當作密碼備援——那等於把密碼直接公開給所有人看。沒有設定 ADMIN_BACKUP_TOKEN 環境變數時,
+// 這個端點就直接關閉(見下方 /api/admin/export),而不是退回某個寫在原始碼裡的固定字串。
+const ADMIN_BACKUP_TOKEN = process.env.ADMIN_BACKUP_TOKEN || null;
 
-// 伺服器啟動時:如果資料庫是全新空的(容器休眠喚醒/重新部署後的常態),嘗試從隨 git 一起
-// 保留下來的 data-snapshot.json 自動還原玩家資料,把免費方案「沒有永久磁碟」的影響降到最低。
-importSnapshotIfEmpty();
+// 伺服器啟動時:先確保資料表存在(Turso 是全新資料庫時需要建表),再檢查如果資料庫是全新空的
+// (容器休眠喚醒/重新部署後的常態),嘗試從隨 git 一起保留下來的 data-snapshot.json 自動還原玩家資料,
+// 把免費方案「沒有永久磁碟」的影響降到最低。ESM 支援頂層 await,故這裡直接等待完成才繼續往下執行。
+await db.initSchema();
+await importSnapshotIfEmpty();
 
 // 最後一道防線:任何沒被個別 try/catch 接住的例外,只記錄下來、不讓整個伺服器行程崩潰。
 // (先前實際發生過:決鬥結算一個打字錯誤讓整台伺服器當機,所有人瞬間斷線——不能再讓單一錯誤波及所有玩家。)
@@ -53,10 +56,11 @@ app.use('/api/auth', authRoutes());
 app.use('/api/game', gameRoutes());
 
 // 存檔急救備份:受 token 保護,匯出全部資料表供人工存成 data-snapshot.json、commit 進版本控制。
-// 在真正遷移到外部持久化資料庫之前,這是唯一能讓資料撐過休眠/重新部署的方式。
-app.get('/api/admin/export', (req, res) => {
+// 沒有設定 ADMIN_BACKUP_TOKEN 時整個端點視同不存在(回 404),避免公開原始碼裡出現任何可用密碼。
+app.get('/api/admin/export', async (req, res) => {
+  if (!ADMIN_BACKUP_TOKEN) return res.status(404).end();
   if (req.query.token !== ADMIN_BACKUP_TOKEN) return res.status(403).json({ error: '無權限' });
-  res.json(exportSnapshot());
+  res.json(await exportSnapshot());
 });
 
 // 正式環境:後端順便把前端打包後的靜態檔案(../dist,由 npm run build 產生)一起提供出去,
@@ -87,8 +91,8 @@ const onlineUsers = new Map(); // userId -> socketId,供決鬥挑戰指定對象
 // 生死決鬥落敗:輸家的帳號與存檔被永久刪除(不可復原)。
 // 贏家獎勵不給裝備/道具這類「現成的」東西——裝備本就該靠玩家自己去打拼、製作取得。
 // 真正的獎勵是大量經驗值,足以讓人當場升級、變得更強。
-function applyDeathDuelOutcome(winnerId, loserId) {
-  const winnerRow = getSaveStmt.get(winnerId);
+async function applyDeathDuelOutcome(winnerId, loserId) {
+  const winnerRow = await getSaveStmt.get(winnerId);
   if (!winnerRow) return null;
   const winnerSave = JSON.parse(winnerRow.data);
 
@@ -98,10 +102,10 @@ function applyDeathDuelOutcome(winnerId, loserId) {
   if (leveledTo) {
     addLog(winnerSave, `這份體悟直接推動你升級至 Lv.${leveledTo}!`);
   }
-  putSaveStmt.run(winnerId, JSON.stringify(winnerSave), new Date().toISOString());
+  await putSaveStmt.run(winnerId, JSON.stringify(winnerSave), new Date().toISOString());
 
-  deleteSaveStmt.run(loserId);
-  deleteUserStmt.run(loserId);
+  await deleteSaveStmt.run(loserId);
+  await deleteUserStmt.run(loserId);
   return { leveledTo };
 }
 
@@ -124,10 +128,12 @@ function broadcastParty(party, event, payload) {
 // 安全包裝:任何事件處理器內部拋出例外時,先前完全沒有防護,一個沒抓到的錯誤就會讓整個
 // Node 行程崩潰、所有玩家瞬間斷線(實際發生過:一次生死決鬥的善後邏輯有錯字,直接打垮整台伺服器)。
 // 包一層 try/catch,讓錯誤只影響「這一次操作」,回報給該玩家,其餘人不受影響。
+// fn 可能是 async function(讀寫資料庫),故這裡也要 async + await,才能接住非同步拋出的例外
+// (若只是原本的同步 try/catch,await 之後才發生的錯誤會變成沒人接住的 rejected promise)。
 function safeHandler(socket, errorEvent, fn) {
-  return (...args) => {
+  return async (...args) => {
     try {
-      fn(...args);
+      await fn(...args);
     } catch (err) {
       console.error(`[socket 事件錯誤] ${errorEvent}:`, err);
       socket.emit(errorEvent, { error: '伺服器處理時發生未預期的錯誤,請稍後再試。' });
@@ -139,8 +145,8 @@ io.on('connection', (socket) => {
   const { userId, username } = socket.user;
   onlineUsers.set(userId, socket.id);
 
-  socket.on('party:create', safeHandler(socket, 'party:error', () => {
-    const row = getSaveStmt.get(userId);
+  socket.on('party:create', safeHandler(socket, 'party:error', async () => {
+    const row = await getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
     const party = createParty({ userId, username, classId: save.classId, stats, socketId: socket.id });
@@ -148,8 +154,8 @@ io.on('connection', (socket) => {
     socket.emit('party:joined', { code: party.code, members: party.members.map((m) => ({ userId: m.userId, username: m.username })) });
   }));
 
-  socket.on('party:join', safeHandler(socket, 'party:error', ({ code }) => {
-    const row = getSaveStmt.get(userId);
+  socket.on('party:join', safeHandler(socket, 'party:error', async ({ code }) => {
+    const row = await getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
     const party = joinParty(code, { userId, username, classId: save.classId, stats, socketId: socket.id });
@@ -177,7 +183,7 @@ io.on('connection', (socket) => {
 
   // 副本內成員的戰鬥行動:action = 'basic'/'aoe'/'buff'/'defend'/'potion'
   // (potion 由這裡先讀取行動者自己的存檔藥水庫存並扣除,再把算好的回復量交給 partyEngine 套用)
-  socket.on('party:action', safeHandler(socket, 'party:error', ({ action, targetIndex, potionId }) => {
+  socket.on('party:action', safeHandler(socket, 'party:error', async ({ action, targetIndex, potionId }) => {
     const party = findPartyByUser(userId);
     if (!party || !party.combat) return socket.emit('party:error', { error: '目前沒有進行中的副本' });
 
@@ -185,11 +191,11 @@ io.on('connection', (socket) => {
     if (action === 'potion') {
       const potion = getPotion(potionId);
       if (!potion) return socket.emit('party:error', { error: '無此藥水' });
-      const row = getSaveStmt.get(userId);
+      const row = await getSaveStmt.get(userId);
       const save = JSON.parse(row.data);
       if (!(save.potions?.[potionId] > 0)) return socket.emit('party:error', { error: '藥水數量不足' });
       save.potions[potionId] -= 1;
-      putSaveStmt.run(userId, JSON.stringify(save), new Date().toISOString());
+      await putSaveStmt.run(userId, JSON.stringify(save), new Date().toISOString());
       const member = party.combat.members[userId];
       if (potion.kind === 'hp') extra = { healAmount: Math.round(member.maxHp * potion.healPct), potionName: potion.name };
       else extra = { manaAmount: Math.round(member.maxMp * potion.healPct), potionName: potion.name };
@@ -200,8 +206,9 @@ io.on('connection', (socket) => {
     broadcastParty(party, 'party:combat-update', { combat: party.combat, lines: result.lines, actorId: userId });
 
     if (result.ended === 'win') {
-      party.members.forEach((m) => {
-        const row = getSaveStmt.get(m.userId);
+      // 依序(非平行)處理每位成員的獎勵存檔,避免同時大量並發寫入 Turso。
+      for (const m of party.members) {
+        const row = await getSaveStmt.get(m.userId);
         const memberSave = JSON.parse(row.data);
         memberSave.exp += result.totalExp;
         const leveledTo = checkLevelUp(memberSave);
@@ -224,10 +231,10 @@ io.on('connection', (socket) => {
         });
         addLog(memberSave, `與同伴合力通關副本,獲得 ${result.totalExp} 點經驗${drops.length ? `,戰利品:${drops.join('、')}` : ''}。`);
         if (leveledTo) addLog(memberSave, `升級至 Lv.${leveledTo}。`);
-        putSaveStmt.run(m.userId, JSON.stringify(memberSave), new Date().toISOString());
+        await putSaveStmt.run(m.userId, JSON.stringify(memberSave), new Date().toISOString());
         const sid = onlineUsers.get(m.userId);
         if (sid) io.to(sid).emit('party:reward', { totalExp: result.totalExp, drops, leveledTo });
-      });
+      }
       endCombat(party);
     } else if (result.ended === 'lose') {
       endCombat(party);
@@ -235,8 +242,8 @@ io.on('connection', (socket) => {
   }));
 
   // ---- 決鬥(1v1,論勝負 或 決生死)----
-  socket.on('duel:challenge', safeHandler(socket, 'duel:error', ({ targetUsername, stakes }) => {
-    const target = findUserByNameStmt.get(targetUsername);
+  socket.on('duel:challenge', safeHandler(socket, 'duel:error', async ({ targetUsername, stakes }) => {
+    const target = await findUserByNameStmt.get(targetUsername);
     if (!target) return socket.emit('duel:error', { error: '查無此人' });
     if (target.id === userId) return socket.emit('duel:error', { error: '不能向自己下戰帖' });
     if (!onlineUsers.has(target.id)) return socket.emit('duel:error', { error: '對方不在線上' });
@@ -249,11 +256,11 @@ io.on('connection', (socket) => {
     declineChallenge(userId);
   }));
 
-  socket.on('duel:accept', safeHandler(socket, 'duel:error', () => {
+  socket.on('duel:accept', safeHandler(socket, 'duel:error', async () => {
     const pending = getPendingChallenge(userId);
     if (!pending) return socket.emit('duel:error', { error: '沒有待處理的戰帖' });
-    const challengerRow = getSaveStmt.get(pending.challengerId);
-    const targetRow = getSaveStmt.get(userId);
+    const challengerRow = await getSaveStmt.get(pending.challengerId);
+    const targetRow = await getSaveStmt.get(userId);
     const challengerStats = computeStats(JSON.parse(challengerRow.data));
     const targetStats = computeStats(JSON.parse(targetRow.data));
     const duel = acceptChallenge(
@@ -267,7 +274,7 @@ io.on('connection', (socket) => {
     if (challengerSocket) io.to(challengerSocket).emit('duel:start', payload);
   }));
 
-  socket.on('duel:attack', safeHandler(socket, 'duel:error', () => {
+  socket.on('duel:attack', safeHandler(socket, 'duel:error', async () => {
     const duel = findDuelByUser(userId);
     if (!duel) return socket.emit('duel:error', { error: '目前沒有進行中的決鬥' });
     const result = duelAttack(duel, userId);
@@ -281,10 +288,10 @@ io.on('connection', (socket) => {
       const winnerId = result.loserUserId === duel.a.userId ? duel.b.userId : duel.a.userId;
       const loserUsername = duel.a.userId === result.loserUserId ? duel.a.username : duel.b.username;
       // 陣亡前先把裝備/背包留存為遺物,供其他玩家日後闖蕩時透過奇遇拾獲(見 fallenLootEngine.js)
-      const loserRow = getSaveStmt.get(result.loserUserId);
-      if (loserRow) depositFallenLoot(loserUsername, JSON.parse(loserRow.data));
+      const loserRow = await getSaveStmt.get(result.loserUserId);
+      if (loserRow) await depositFallenLoot(loserUsername, JSON.parse(loserRow.data));
 
-      const outcome = applyDeathDuelOutcome(winnerId, result.loserUserId);
+      const outcome = await applyDeathDuelOutcome(winnerId, result.loserUserId);
       const loserSocket = onlineUsers.get(result.loserUserId);
       if (loserSocket) {
         io.to(loserSocket).emit('duel:eliminated', { message: '此戰落敗,依生死戰約,帳號已被永久刪除。' });

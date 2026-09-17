@@ -14,18 +14,19 @@ const selectByIdStmt = db.prepare('SELECT * FROM auction_listings WHERE id = ?')
 const deleteByIdStmt = db.prepare('DELETE FROM auction_listings WHERE id = ?');
 
 function removeExpired() {
-  deleteExpiredStmt.run(new Date().toISOString());
+  return deleteExpiredStmt.run(new Date().toISOString());
 }
 
-export function listItem(sellerId, sellerName, item, price) {
+export async function listItem(sellerId, sellerName, item, price) {
   const now = new Date();
   const expires = new Date(now.getTime() + LISTING_DURATION_HOURS * 3600 * 1000);
-  insertListingStmt.run(sellerId, sellerName, JSON.stringify(item), price, now.toISOString(), expires.toISOString());
+  await insertListingStmt.run(sellerId, sellerName, JSON.stringify(item), price, now.toISOString(), expires.toISOString());
 }
 
-export function getListings() {
-  removeExpired();
-  return selectAllStmt.all().map((row) => ({
+export async function getListings() {
+  await removeExpired();
+  const rows = await selectAllStmt.all();
+  return rows.map((row) => ({
     id: row.id,
     sellerId: row.seller_id,
     sellerName: row.seller_name,
@@ -36,9 +37,9 @@ export function getListings() {
   }));
 }
 
-export function getListingById(id) {
-  removeExpired();
-  const row = selectByIdStmt.get(id);
+export async function getListingById(id) {
+  await removeExpired();
+  const row = await selectByIdStmt.get(id);
   if (!row) return null;
   return {
     id: row.id,
@@ -51,6 +52,6 @@ export function getListingById(id) {
   };
 }
 
-export function removeListing(id) {
-  deleteByIdStmt.run(id);
+export async function removeListing(id) {
+  await deleteByIdStmt.run(id);
 }

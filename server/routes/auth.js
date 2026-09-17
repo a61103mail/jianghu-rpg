@@ -14,7 +14,7 @@ export default function authRoutes() {
   const findUser = db.prepare('SELECT * FROM users WHERE username = ?');
   const insertSave = db.prepare('INSERT INTO saves (user_id, data, updated_at) VALUES (?, ?, ?)');
 
-  router.post('/register', (req, res) => {
+  router.post('/register', async (req, res) => {
     const { username, password } = req.body || {};
     if (typeof username !== 'string' || typeof password !== 'string') {
       return res.status(400).json({ error: '請輸入帳號密碼' });
@@ -28,21 +28,21 @@ export default function authRoutes() {
     if (password.length < 4) {
       return res.status(400).json({ error: '密碼至少需 4 碼' });
     }
-    if (findUser.get(username)) {
+    if (await findUser.get(username)) {
       return res.status(409).json({ error: '此帳號已被註冊' });
     }
     const hash = bcrypt.hashSync(password, 10);
     const now = new Date().toISOString();
-    const result = insertUser.run(username, hash, now);
+    const result = await insertUser.run(username, hash, now);
     const userId = Number(result.lastInsertRowid);
-    insertSave.run(userId, JSON.stringify(createDefaultSave()), now);
+    await insertSave.run(userId, JSON.stringify(createDefaultSave()), now);
     const token = jwt.sign({ userId, username }, JWT_SECRET, { expiresIn: '30d' });
     res.json({ token, username });
   });
 
-  router.post('/login', (req, res) => {
+  router.post('/login', async (req, res) => {
     const { username, password } = req.body || {};
-    const user = findUser.get(username);
+    const user = await findUser.get(username);
     if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
       return res.status(401).json({ error: '帳號或密碼錯誤' });
     }
