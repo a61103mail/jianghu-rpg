@@ -28,6 +28,17 @@ const VENTURE_BONUS_EXP_MULT = 1.2; // 旅程完成獎勵:以地圖怪物池平�
 const FALLEN_LOOT_EVENT_WEIGHT = 2; // 「拾獲遺物」事件在奇遇池中的權重(僅在確實有遺物可拾時才會抽到)
 const FALLEN_LOOT_CHOICE_COUNT = 3; // 每次最多展示幾件遺物供玩家挑選其一
 
+// 地圖等級差過大時的獎勵衰減:玩家等級一旦明顯超過地圖建議上限,經驗/金幣/材料獎勵大幅縮水。
+// 沒有這道機制的話,玩家練到高等級後可以回頭「零風險」刷最簡單的地圖(連王都一擊必殺),
+// 材料掉落與金幣完全不會衰減,等於練功打寶完全不必往更難的地圖前進——這違背「越好的裝備才有價值、
+// 打贏更強的敵人要真的更划算」的設計方向。1~2級的自然超前不受影響,超過4~7級後急速趨近15%下限
+// (不會完全歸零,偶爾回去清材料/快速刷幾隻仍有一點意義,但絕不能是主要收入來源)。
+function overlevelPenaltyMultiplier(playerLevel, map) {
+  const gap = playerLevel - map.levelRange[1];
+  if (gap <= 0) return 1;
+  return Math.max(0.15, 1 - gap * 0.12);
+}
+
 function loadSave(userId) {
   const row = getSaveStmt.get(userId);
   if (!row) return null;
@@ -237,23 +248,27 @@ function resolveEventStage(save, map) {
   // 那種情況該去雜貨店賣東西換錢,不需要遊戲額外幫忙。
   const destitute = save.gold <= 0 && !hasSellableAssets(save);
   const evt = rollMapEvent({ boostGold: destitute });
+  const rewardPenalty = overlevelPenaltyMultiplier(save.level, map);
   const lines = [];
   if (evt.type === 'gold') {
     const amt = evt.min + Math.floor(Math.random() * (evt.max - evt.min + 1));
-    save.gold += amt;
-    lines.push(evt.text(amt));
+    // 「真正一無所有」的安全網金幣不套用等級差懲罰——那是防止死亡螺旋的機制,不該因為玩家剛好在
+    // 等級不符的地圖上而失效;一般撿到金幣事件則正常套用衰減,呼應「不該一直刷低階圖賺錢」的設計。
+    const finalAmt = destitute ? amt : Math.max(1, Math.round(amt * rewardPenalty));
+    save.gold += finalAmt;
+    lines.push(evt.text(finalAmt));
   } else if (evt.type === 'material') {
     const pool = nonJunkDrops(map);
     if (pool.length === 0) {
       lines.push('這一段路風平浪靜,什麼也沒發現。');
     } else {
       const pick = pool[Math.floor(Math.random() * pool.length)];
-      const amt = pick.min + Math.floor(Math.random() * (pick.max - pick.min + 1));
+      const amt = Math.max(1, Math.round((pick.min + Math.floor(Math.random() * (pick.max - pick.min + 1))) * rewardPenalty));
       save.materials[pick.id] = (save.materials[pick.id] || 0) + amt;
       lines.push(evt.text(getItem(pick.id)?.name || pick.id, amt));
     }
   } else if (evt.type === 'exp') {
-    const amt = evt.min + Math.floor(Math.random() * (evt.max - evt.min + 1));
+    const amt = Math.max(1, Math.round((evt.min + Math.floor(Math.random() * (evt.max - evt.min + 1))) * rewardPenalty));
     save.exp += amt;
     lines.push(evt.text(amt));
     const leveledTo = checkLevelUp(save);
@@ -271,7 +286,7 @@ function resolveEventStage(save, map) {
       save.inventory.push(gear);
       lines.push(`竟讓你挖到一件裝備:「${gear.name}」!`);
     } else if (roll < 0.4) {
-      const amt = 20 + Math.floor(Math.random() * 50);
+      const amt = Math.max(1, Math.round((20 + Math.floor(Math.random() * 50)) * rewardPenalty));
       save.gold += amt;
       lines.push(`找到一處藏寶,得 ${amt} 枚金幣。`);
     } else {
@@ -305,7 +320,8 @@ function advanceVentureStage(save, map) {
     const result = resolveGatherStage(map);
     let lines;
     if (result.gained) {
-      const amt = result.gained.min + Math.floor(Math.random() * (result.gained.max - result.gained.min + 1)) + 1;
+      const rewardPenalty = overlevelPenaltyMultiplier(save.level, map);
+      const amt = Math.max(1, Math.round((result.gained.min + Math.floor(Math.random() * (result.gained.max - result.gained.min + 1)) + 1) * rewardPenalty));
       save.materials[result.gained.id] = (save.materials[result.gained.id] || 0) + amt;
       lines = [`你專心採集了一陣,收穫${getItem(result.gained.id)?.name || result.gained.id} x${amt}。`];
     } else {
@@ -663,13 +679,19 @@ export default function gameRoutes() {
 
     if (aliveEnemies().length === 0) {
       // 王被實際擊敗(打贏)才開始重生冷卻——遇到但脫身/撤退不算,見 rollBossEncounter 的說明
-      if (combat.isBossFight) markBossDefeated(save, getMap(combat.mapId), combat.bossKind);
+      const combatMap = getMap(combat.mapId);
+      if (combat.isBossFight) markBossDefeated(save, combatMap, combat.bossKind);
+      const rewardPenalty = overlevelPenaltyMultiplier(save.level, combatMap);
       let totalExp = 0;
       const drops = [];
       combat.enemies.forEach((enemy) => {
         totalExp += enemy.exp;
         (enemy.dropTable || []).forEach((d) => {
-          if (Math.random() < d.chance) {
+          // 稀有素材(僅小王/大王掉落,製作稀有/超稀有裝備專用)不受等級差懲罰——回頭刷早期地圖的王
+          // 拿製作材料是正常玩法(稀有階配方本來就固定要打第一章的王,超稀有階要打其他章節的王),
+          // 不該被誤判成「刷簡單地圖賺錢」而被懲罰。只有雜物(純賣錢用)跟一般素材才會衰減。
+          const dropPenalty = d.kind === 'rare_material' ? 1 : rewardPenalty;
+          if (Math.random() < d.chance * dropPenalty) {
             const amt = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
             // 卷軸/方塊屬於強化消耗品,存放於 save.consumables(跟一般材料的 save.materials 分開)
             const enhanceItem = getEnhanceItem(d.id);
@@ -689,8 +711,9 @@ export default function gameRoutes() {
           drops.push(`裝備:${gear.name}`);
         }
       });
-      save.exp += totalExp;
-      lines.push(`擊敗了所有敵人!獲得 ${totalExp} 點經驗。`);
+      const finalExp = Math.max(1, Math.round(totalExp * rewardPenalty));
+      save.exp += finalExp;
+      lines.push(`擊敗了所有敵人!獲得 ${finalExp} 點經驗。`);
       if (drops.length) lines.push(`戰利品:${drops.join('、')}。`);
       addLog(save, `於${combat.mapName}擊敗${combat.enemies.map((e) => e.name).join('、')},獲得 ${totalExp} 點經驗${drops.length ? `,戰利品:${drops.join('、')}` : ''}。`);
 
