@@ -55,24 +55,24 @@ export function rollEnhance(item) {
 export const POTENTIAL_TIERS = ['rare', 'epic', 'legendary'];
 export const POTENTIAL_TIER_NAME_ZH = { rare: '稀有', epic: '史詩', legendary: '傳說' };
 const POTENTIAL_LINE_COUNT = { rare: 1, epic: 2, legendary: 3 };
+// 攻擊強度(atkPowerPct)統一套用到該職業實際使用的攻擊屬性(見 characterEngine.js computeStats)——
+// 不分「物理攻擊力%」「魔法攻擊力%」兩條獨立詞條,因為每個職業永遠只用其中一種攻擊屬性,
+// 分開設計等於讓玩家有一半機率洗到對自己完全沒用的死詞條,合併後每次洗鍊結果都有意義。
 const POTENTIAL_LINE_POOL = {
   rare: [
-    { key: 'atkPct', label: '攻擊力', min: 0.01, max: 0.03 },
-    { key: 'matkPct', label: '魔法攻擊力', min: 0.01, max: 0.03 },
+    { key: 'atkPowerPct', label: '攻擊強度', min: 0.01, max: 0.03 },
     { key: 'defPct', label: '防禦力', min: 0.02, max: 0.05 },
     { key: 'hpPct', label: '氣血上限', min: 0.02, max: 0.05 },
     { key: 'critRatePct', label: '會心率', min: 0.01, max: 0.02 },
   ],
   epic: [
-    { key: 'atkPct', label: '攻擊力', min: 0.02, max: 0.05 },
-    { key: 'matkPct', label: '魔法攻擊力', min: 0.02, max: 0.05 },
+    { key: 'atkPowerPct', label: '攻擊強度', min: 0.02, max: 0.05 },
     { key: 'defPct', label: '防禦力', min: 0.04, max: 0.08 },
     { key: 'hpPct', label: '氣血上限', min: 0.04, max: 0.08 },
     { key: 'critRatePct', label: '會心率', min: 0.02, max: 0.04 },
   ],
   legendary: [
-    { key: 'atkPct', label: '攻擊力', min: 0.04, max: 0.08 },
-    { key: 'matkPct', label: '魔法攻擊力', min: 0.04, max: 0.08 },
+    { key: 'atkPowerPct', label: '攻擊強度', min: 0.04, max: 0.08 },
     { key: 'defPct', label: '防禦力', min: 0.07, max: 0.13 },
     { key: 'hpPct', label: '氣血上限', min: 0.07, max: 0.13 },
     { key: 'critRatePct', label: '會心率', min: 0.03, max: 0.06 },

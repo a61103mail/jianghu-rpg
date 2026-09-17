@@ -2,6 +2,7 @@
 import { getClass, expForNextLevel, STAT_POINTS_PER_LEVEL, MAX_LEVEL } from '../data/classData.js';
 import { GEAR_SLOTS } from '../data/itemData.js';
 import { getItemTotalStats } from './itemEngine.js';
+import { computeEvasionRate } from './combatEngine.js';
 
 export const HP_REGEN_PCT_PER_MINUTE = 0.04; // 氣血自然恢復:每分鐘回復上限的 4%(離線也會累積),城鎮/藥水才是主要恢復手段
 export const MP_REGEN_PCT_PER_MINUTE = 0.06; // 真力自然恢復略快於氣血
@@ -53,10 +54,25 @@ export function computeMpRegen(lastRegenAt, currentMp, maxMp) {
 export function computeStats(save) {
   const cls = getClass(save.classId);
   const alloc = save.allocatedStats || { str: 0, dex: 0, int: 0, luk: 0 };
-  const str = cls.baseStat.str + (alloc.str || 0);
-  const dex = cls.baseStat.dex + (alloc.dex || 0);
-  const int_ = cls.baseStat.int + (alloc.int || 0);
-  const luk = cls.baseStat.luk + (alloc.luk || 0);
+
+  // 裝備直接提供的原始屬性加成(STR/DEX/INT/LUK):跟玩家自行配點「完全等價」疊加,
+  // 一起流入下方攻擊力/防禦/氣血/會心/迴避的衍生公式——而不是額外獨立加在最終數值上。
+  // 這讓裝備能真正把玩家推向某個build方向(例如DEX裝備讓弓箭手的迴避build更進一步),
+  // 而不只是單純疊加atk/def這些「已經算好」的死數字。
+  let gearStr = 0, gearDex = 0, gearInt = 0, gearLuk = 0;
+  GEAR_SLOTS.forEach((slot) => {
+    const item = save.equipment[slot];
+    if (!item?.stats) return;
+    gearStr += item.stats.str || 0;
+    gearDex += item.stats.dex || 0;
+    gearInt += item.stats.int || 0;
+    gearLuk += item.stats.luk || 0;
+  });
+
+  const str = cls.baseStat.str + (alloc.str || 0) + gearStr;
+  const dex = cls.baseStat.dex + (alloc.dex || 0) + gearDex;
+  const int_ = cls.baseStat.int + (alloc.int || 0) + gearInt;
+  const luk = cls.baseStat.luk + (alloc.luk || 0) + gearLuk;
 
   let maxHp = cls.baseHp + cls.hpPerLevel * (save.level - 1) + str * 3;
   let maxMp = cls.baseMp + cls.mpPerLevel * (save.level - 1) + int_ * 2;
@@ -64,6 +80,10 @@ export function computeStats(save) {
   let matk = Math.round(int_ * 1.5);
   let def = Math.round(str * 0.3 + dex * 0.3 + save.level * 0.5);
   let critRate = 0.05 + luk * 0.002 + dex * 0.001;
+  // 迴避率:DEX + 等級共同決定,上限80%(見 combatEngine.js 說明)。弓箭手天生DEX高、
+  // 全點DEX時迴避明顯優於其他職業,戰士天生DEX低、迴避明顯較弱但氣血/防禦更高——
+  // 這條公式讓「弓箭手擅長閃避、戰士擅長硬扛」的職業定位自然浮現,不需要另外寫特例判斷職業。
+  let evasionRate = computeEvasionRate({ dex, level: save.level });
 
   // 光環(被動)技能:常駐加成,需等級達到 unlockLevel 才會生效(不是一開始就有)
   const aura = cls.skills.aura;
@@ -85,28 +105,30 @@ export function computeStats(save) {
   });
 
   // 潛能(方塊洗出的隨機百分比詞條):加總所有已裝備物品的潛能詞條,最後以乘算方式套用在對應屬性上
-  // (潛能詞條本身已是小數形式的百分比,如 0.03 代表 +3%,不需要再除以100,跟上方 item.stats.critRatePct 的「百分點」表示法不同)
-  let potentialAtkPct = 0, potentialMatkPct = 0, potentialDefPct = 0, potentialHpPct = 0, potentialCritRatePct = 0;
+  // (潛能詞條本身已是小數形式的百分比,如 0.03 代表 +3%,不需要再除以100,跟上方 item.stats.critRatePct 的「百分點」表示法不同)。
+  // 攻擊強度(atkPowerPct)統一套用到該職業實際使用的攻擊屬性(物理職業吃atk、魔法職業吃matk)——
+  // 先前分成 atkPct/matkPct 兩條獨立詞條,對任何職業而言永遠有一半的洗鍊結果是完全無用的死詞條,
+  // 合併成單一詞條後,不管洗到什麼結果都對自己有意義。
+  let potentialAtkPowerPct = 0, potentialDefPct = 0, potentialHpPct = 0, potentialCritRatePct = 0;
   GEAR_SLOTS.forEach((slot) => {
     const item = save.equipment[slot];
     if (!item?.potential?.lines) return;
     item.potential.lines.forEach((line) => {
-      if (line.key === 'atkPct') potentialAtkPct += line.value;
-      else if (line.key === 'matkPct') potentialMatkPct += line.value;
+      if (line.key === 'atkPowerPct') potentialAtkPowerPct += line.value;
       else if (line.key === 'defPct') potentialDefPct += line.value;
       else if (line.key === 'hpPct') potentialHpPct += line.value;
       else if (line.key === 'critRatePct') potentialCritRatePct += line.value;
     });
   });
-  atk = Math.round(atk * (1 + potentialAtkPct));
-  matk = Math.round(matk * (1 + potentialMatkPct));
+  if (cls.attackType === 'matk') matk = Math.round(matk * (1 + potentialAtkPowerPct));
+  else atk = Math.round(atk * (1 + potentialAtkPowerPct));
   def = Math.round(def * (1 + potentialDefPct));
   maxHp = maxHp * (1 + potentialHpPct);
   critRate += potentialCritRatePct;
 
   return {
     str, dex, int: int_, luk,
-    atk, matk, def, critRate,
+    atk, matk, def, critRate, evasionRate,
     maxHp: Math.round(maxHp), maxMp: Math.round(maxMp),
     hp: Math.round(maxHp), mp: Math.round(maxMp), // 相容別名:partyEngine/duelEngine 沿用舊欄位名稱取用「滿血滿真力」初始值
     level: save.level,

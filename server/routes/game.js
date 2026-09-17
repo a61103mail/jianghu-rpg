@@ -630,7 +630,11 @@ export default function gameRoutes() {
           }
         }
 
-        const { amount, isCrit } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: stats.def, critRate: enemy.critRate });
+        const { amount, isCrit, missed } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: stats.def, critRate: enemy.critRate, evasionPct: stats.evasionRate });
+        if (missed) {
+          lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', missed: true }));
+          return;
+        }
         const boosted = isChargeRelease ? Math.round(amount * enemy.chargeSkill.dmgMult) : amount;
         const finalAmount = defending ? Math.max(1, Math.ceil(boosted * 0.5)) : boosted;
         combat.playerHp = Math.max(0, combat.playerHp - finalAmount);

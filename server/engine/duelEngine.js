@@ -57,7 +57,13 @@ export function duelAttack(duel, userId) {
   const target = isA ? duel.b : duel.a;
   if (duel.ended) return { lines: ['此戰已分出結果。'] };
 
-  const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: actor.stats.atk, coeff: 1, def: target.stats.def, critRate: actor.stats.critRate });
+  // 依攻擊方職業的攻擊屬性(物理atk/魔法matk)決定傷害來源——先前不分職業一律用atk,
+  // 導致法師/牧師這類幾乎不點物理攻擊的職業在決鬥中打不出真正傷害,是與此處緊密相關的既有bug,一併修正。
+  const atkStat = actor.stats.attackType === 'matk' ? actor.stats.matk : actor.stats.atk;
+  const { amount, isCrit, missed } = rollDamage({ level: actor.stats.level, atk: atkStat, coeff: 1, def: target.stats.def, critRate: actor.stats.critRate, evasionPct: target.stats.evasionRate });
+  if (missed) {
+    return { lines: [narrateAttack({ attackerName: actor.username, defenderName: target.username, missed: true })], ended: null, loserUserId: null };
+  }
   target.hp = Math.max(0, target.hp - amount);
   const lines = [narrateAttack({ attackerName: actor.username, defenderName: target.username, amount, isCrit })];
 

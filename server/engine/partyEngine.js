@@ -242,7 +242,11 @@ export function partyMemberAction(party, userId, action, extra = {}) {
       }
     }
 
-    const { amount, isCrit } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: target.stats.def, critRate: enemy.critRate });
+    const { amount, isCrit, missed } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: target.stats.def, critRate: enemy.critRate, evasionPct: target.stats.evasionRate });
+    if (missed) {
+      lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, missed: true }));
+      return;
+    }
     const boosted = isChargeRelease ? Math.round(amount * enemy.chargeSkill.dmgMult) : amount;
     // 防禦只減輕「行動者自己」承受的傷害(跟單人戰鬥一致的設計精神:防禦是主動選擇要扛下這一擊的人)
     const isDefendingTarget = defending && targetId === userId;

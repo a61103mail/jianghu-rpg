@@ -66,15 +66,16 @@ const EPIC_TIER_BOSS_MATS = {
   witch_charm: 1, drake_scale: 1, knight_emblem: 1, king_crown_shard: 1,
 }; // 第二~五章剩下全部小王+大王,超稀有階代表「打完整個遊戲」的終極門檻
 const TIER_STATS = {
-  common: { weaponAtk: 20, armorDef: 14, armorHp: 46, accCritPct: 2.8, accHp: 28 },
-  rare: { weaponAtk: 31, armorDef: 22, armorHp: 73, accCritPct: 4.4, accHp: 44 },
-  epic: { weaponAtk: 47, armorDef: 34, armorHp: 109, accCritPct: 6.6, accHp: 66 },
+  common: { weaponAtk: 20, armorDef: 14, armorHp: 46, accCritPct: 2.8, accHp: 28, accDex: 14 },
+  rare: { weaponAtk: 31, armorDef: 22, armorHp: 73, accCritPct: 4.4, accHp: 44, accDex: 22 },
+  epic: { weaponAtk: 47, armorDef: 34, armorHp: 109, accCritPct: 6.6, accHp: 66, accDex: 34 },
 };
 const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有' };
 
-// 依商店的攻擊屬性(atk/matk)與部位,組出四個部位×三階層共 12 張配方。
-// 飾品的兩張配方(acc1會心向/acc2氣血向)只是「兩種不同屬性傾向的飾品」,不代表兩個不同格子——
+// 依商店的攻擊屬性(atk/matk)與部位,組出四個部位×三階層共 15 張配方(武器/防具各1張+飾品3張)。
+// 飾品的三張配方(acc1會心向/acc2氣血向/acc3敏捷向)只是「三種不同屬性傾向的飾品」,不代表三個不同格子——
 // slot 統一用通用的 accessory,實際要放飾品一或飾品二由玩家裝備時自己選。
+// acc3(DEX)讓玩家能主動往「迴避build」itemize,不限定弓箭手,任何職業都能選擇這條路線。
 function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold) {
   const recipes = [];
   ['common', 'rare', 'epic'].forEach((tier) => {
@@ -86,6 +87,7 @@ function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold) {
     recipes.push({ id: `${shopId}_armor_${tier}`, name: n.armor, slot: 'armor', tier, gold, materials, statBonus: { def: s.armorDef, hp: s.armorHp } });
     recipes.push({ id: `${shopId}_accessory1_${tier}`, name: n.acc1, slot: 'accessory', tier, gold, materials, statBonus: { critRatePct: s.accCritPct } });
     recipes.push({ id: `${shopId}_accessory2_${tier}`, name: n.acc2, slot: 'accessory', tier, gold, materials, statBonus: { hp: s.accHp } });
+    recipes.push({ id: `${shopId}_accessory3_${tier}`, name: n.acc3, slot: 'accessory', tier, gold, materials, statBonus: { dex: s.accDex } });
   });
   return recipes;
 }
@@ -94,9 +96,9 @@ export const RARE_RECIPES = {
   blacksmith: buildShopRecipes(
     'blacksmith', 'atk',
     {
-      common: { weapon: '精鐵劍', armor: '精鐵鎧甲', acc1: '精鐵護符', acc2: '力量護腕' },
-      rare: { weapon: '精鋼劍', armor: '鋼骨鎧甲', acc1: '猛豬獠牙墜', acc2: '蠻力腰帶' },
-      epic: { weapon: '巨人斷魂劍', armor: '磐岩王者重甲', acc1: '騎士徽記戒', acc2: '巨人之心護環' },
+      common: { weapon: '精鐵劍', armor: '精鐵鎧甲', acc1: '精鐵護符', acc2: '力量護腕', acc3: '精鐵敏捷環' },
+      rare: { weapon: '精鋼劍', armor: '鋼骨鎧甲', acc1: '猛豬獠牙墜', acc2: '蠻力腰帶', acc3: '疾風獠牙墜' },
+      epic: { weapon: '巨人斷魂劍', armor: '磐岩王者重甲', acc1: '騎士徽記戒', acc2: '巨人之心護環', acc3: '騎士疾影靴' },
     },
     {
       common: { iron_ore: 5 },
@@ -108,9 +110,9 @@ export const RARE_RECIPES = {
   leather: buildShopRecipes(
     'leather', 'atk',
     {
-      common: { weapon: '硬化短弓', armor: '硬化皮甲', acc1: '羽紋護符', acc2: '敏捷手環' },
-      rare: { weapon: '隊長之弓', armor: '蛛絲輕甲', acc1: '隊長徽記戒', acc2: '迅捷腰帶' },
-      epic: { weapon: '蛛后長弓', armor: '蛛絲聖鎧', acc1: '蛛絲護符', acc2: '疾風之羽環' },
+      common: { weapon: '硬化短弓', armor: '硬化皮甲', acc1: '羽紋護符', acc2: '敏捷手環', acc3: '疾行足環' },
+      rare: { weapon: '隊長之弓', armor: '蛛絲輕甲', acc1: '隊長徽記戒', acc2: '迅捷腰帶', acc3: '獵風之靴' },
+      epic: { weapon: '蛛后長弓', armor: '蛛絲聖鎧', acc1: '蛛絲護符', acc2: '疾風之羽環', acc3: '疾影蛛絲靴' },
     },
     {
       common: { rough_leather: 3, feather: 2 },
@@ -122,9 +124,9 @@ export const RARE_RECIPES = {
   magic: buildShopRecipes(
     'magic', 'matk',
     {
-      common: { weapon: '木杖', armor: '學徒法袍', acc1: '碎晶護符', acc2: '魔力手環' },
-      rare: { weapon: '史萊姆核心法杖', armor: '圖騰法袍', acc1: '史萊姆核心戒', acc2: '圖騰腰帶' },
-      epic: { weapon: '女巫魔導書', armor: '酋長聖法袍', acc1: '女巫法冠', acc2: '酋長圖騰項鍊' },
+      common: { weapon: '木杖', armor: '學徒法袍', acc1: '碎晶護符', acc2: '魔力手環', acc3: '碎晶敏捷戒' },
+      rare: { weapon: '史萊姆核心法杖', armor: '圖騰法袍', acc1: '史萊姆核心戒', acc2: '圖騰腰帶', acc3: '核心迅步環' },
+      epic: { weapon: '女巫魔導書', armor: '酋長聖法袍', acc1: '女巫法冠', acc2: '酋長圖騰項鍊', acc3: '女巫疾影靴' },
     },
     {
       common: { crystal_shard: 5 },
@@ -136,9 +138,9 @@ export const RARE_RECIPES = {
   church: buildShopRecipes(
     'church', 'matk',
     {
-      common: { weapon: '聖杖', armor: '見習聖袍', acc1: '聖水護符', acc2: '信仰手環' },
-      rare: { weapon: '聖水法錘', armor: '聖水聖袍', acc1: '聖水戒', acc2: '聖水腰帶' },
-      epic: { weapon: '龍鱗聖錘', armor: '龍鱗聖甲', acc1: '王冠聖珠', acc2: '王冠聖環' },
+      common: { weapon: '聖杖', armor: '見習聖袍', acc1: '聖水護符', acc2: '信仰手環', acc3: '聖水疾行環' },
+      rare: { weapon: '聖水法錘', armor: '聖水聖袍', acc1: '聖水戒', acc2: '聖水腰帶', acc3: '聖水迅捷靴' },
+      epic: { weapon: '龍鱗聖錘', armor: '龍鱗聖甲', acc1: '王冠聖珠', acc2: '王冠聖環', acc3: '龍鱗疾影靴' },
     },
     {
       common: { holy_water: 5 },

@@ -40,13 +40,20 @@ function commonArmorStat(level) {
   const hpRoll = rollStatWithVariance(8 + level * 2.5);
   return { stats: { def: defRoll.value, hp: hpRoll.value }, quality: averageQuality([defRoll, hpRoll]) };
 }
+// 飾品是職業無關的通用格,三選一:會心率、氣血,或直接給DEX原生屬性(讓迴避build能透過裝備進一步強化,
+// DEX同時也會回饋到攻擊/防禦/會心,對任何職業來說都不是死詞條)。
 function commonAccessoryStat(level) {
-  if (Math.random() < 0.5) {
+  const roll = Math.random();
+  if (roll < 0.34) {
     const r = rollDecimalStatWithVariance(0.5 + level * 0.15);
     return { stats: { critRatePct: r.value }, quality: r.quality };
   }
-  const r = rollStatWithVariance(5 + level * 1.5);
-  return { stats: { hp: r.value }, quality: r.quality };
+  if (roll < 0.67) {
+    const r = rollStatWithVariance(5 + level * 1.5);
+    return { stats: { hp: r.value }, quality: r.quality };
+  }
+  const r = rollStatWithVariance(1 + level * 0.3);
+  return { stats: { dex: r.value }, quality: r.quality };
 }
 
 // 普通裝備:打怪掉落時依怪物等級隨機生成(武器會限定職業類型,防具/飾品任何職業皆可用)。

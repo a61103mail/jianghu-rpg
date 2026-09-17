@@ -14,7 +14,8 @@ const SLOT_LABEL_ZH = { weapon: '武器', armor: '防具', accessory1: '飾品�
 function slotLabelZh(slot) { return SLOT_LABEL_ZH[slot] || slot; }
 const STAT_LABEL_ZH = {
   atk: '攻擊力', matk: '魔法攻擊力', def: '防禦力', hp: '氣血上限', mp: '真力上限',
-  critRatePct: '會心率', hpRegenPct: '氣血回復', atkPct: '攻擊力%', matkPct: '魔攻%', defPct: '防禦%', hpPct: '氣血%',
+  critRatePct: '會心率', hpRegenPct: '氣血回復', atkPowerPct: '攻擊強度%', defPct: '防禦%', hpPct: '氣血%',
+  str: 'STR力量', dex: 'DEX敏捷', int: 'INT智力', luk: 'LUK幸運',
 };
 function statLabelZh(key) { return STAT_LABEL_ZH[key] || key; }
 function statsText(stats) {
@@ -83,6 +84,7 @@ function statBlock(stats) {
     h('div', {}, [h('b', {}, '魔攻 '), String(stats.matk)]),
     h('div', {}, [h('b', {}, '防禦 '), String(stats.def)]),
     h('div', {}, [h('b', {}, '會心 '), `${Math.round(stats.critRate * 100)}%`]),
+    h('div', {}, [h('b', {}, '迴避 '), `${Math.round((stats.evasionRate || 0) * 100)}%`]),
   ]);
 }
 

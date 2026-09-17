@@ -6,6 +6,18 @@
 
 const LEVEL_BASE_COEF = 4; // 每級提供的基礎威力(等級30時基礎值為120,約略對應「100+攻擊力*0.X」的量級)
 
+// 迴避機制:DEX 與等級共同決定迴避率,上限 80%(避免堆到「完全打不中」的極端情況)。
+// 弓箭手天生 DEX 最高,天生就比較容易閃避但氣血較低(因為配點都投入DEX、沒有餘裕點STR衝氣血);
+// 戰士天生 DEX 低、STR高,走向恰好相反(扛得住但難以閃躲)——兩職業的定位差異由這條公式自然放大。
+export const EVASION_CAP = 0.8;
+const EVASION_BASE = 0.05;
+const EVASION_DEX_COEF = 0.0025;
+const EVASION_LEVEL_COEF = 0.003;
+export function computeEvasionRate({ dex, level }) {
+  const raw = EVASION_BASE + dex * EVASION_DEX_COEF + level * EVASION_LEVEL_COEF;
+  return Math.max(0, Math.min(EVASION_CAP, raw));
+}
+
 const ATTACK_VERBS = ['奮力揮擊', '欺身突進', '猛然出手', '瞄準破綻攻去', '使出全力一擊'];
 const CRIT_PHRASES = ['正中要害', '是漂亮的會心一擊', '力道貫穿而入'];
 const NORMAL_PHRASES = ['扎實挨了一記', '未能完全閃避', '硬生生受了一下'];
@@ -19,14 +31,18 @@ function pick(arr) {
 // 依「等級線性基礎值 + 攻擊力*固定係數」計算單次攻擊傷害(coeff 預設 1,代表一般攻擊/敵方普攻;
 // 技能傷害則傳入該技能固定的 coeff)。level 為攻擊方等級,def 為受擊方防禦。
 // resistPct:受擊方對此傷害類型(物理/魔法)的抗性,正值減傷、負值(弱點)增傷,套用在防禦力扣減之前。
-export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0 }) {
+// evasionPct:受擊方的迴避率,命中判定優先於一切傷害計算——迴避成功則直接 missed:true、無傷害。
+export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0, evasionPct = 0 }) {
+  if (Math.random() < evasionPct) {
+    return { amount: 0, isCrit: false, missed: true };
+  }
   const isCrit = Math.random() < critRate;
   const levelBase = LEVEL_BASE_COEF * level;
   const raw = (levelBase + atk * coeff) * (1 - resistPct);
   const varied = raw * (0.85 + Math.random() * 0.3);
   const mitigated = Math.max(1, Math.round(varied - def * 0.5));
   const amount = isCrit ? Math.round(mitigated * 1.6) : mitigated;
-  return { amount: Math.max(1, amount), isCrit };
+  return { amount: Math.max(1, amount), isCrit, missed: false };
 }
 
 export function narrateAttack({ attackerName, defenderName, amount, isCrit, missed }) {
@@ -36,8 +52,9 @@ export function narrateAttack({ attackerName, defenderName, amount, isCrit, miss
   return `${attackerName}${verb},${defenderName}${phrase},造成 ${amount} 點傷害${isCrit ? '(會心一擊!)' : ''}。`;
 }
 
-export function narrateEnemyAttack({ enemyName, targetName, amount, isCrit }) {
+export function narrateEnemyAttack({ enemyName, targetName, amount, isCrit, missed }) {
   const verb = pick(ENEMY_TURN_VERBS);
+  if (missed) return `${enemyName}${verb},${targetName}${pick(MISS_PHRASES)}。`;
   return `${enemyName}${verb},${targetName}${isCrit ? '猝不及防,傷勢不輕' : '硬接下來'},損失 ${amount} 點氣血${isCrit ? '(要害!)' : ''}。`;
 }
 
