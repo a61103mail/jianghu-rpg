@@ -89,10 +89,16 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 .skill-btn.locked { background: #241f16; border-color: var(--panel-border); color: var(--ink-dim); font-weight: normal; cursor: not-allowed; box-shadow: none; }
 .skill-btn.attack { border-color: #c94b4b; }
 .skill-btn.attack:hover { background: #4a2020; }
+.skill-btn.defend { border-color: #3b82f6; }
+.skill-btn.defend:hover { background: #1e2f4a; }
 
-/* 技能欄內部分排:單體/範圍/BUFF 各自一排,避免全部擠在同一排分不清楚 */
+/* 技能欄內部分排:單體/範圍/BUFF/防禦 各自一排,避免全部擠在同一排分不清楚 */
 .skill-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .skill-row-label { min-width: 40px; color: var(--ink-dim); font-size: 13px; font-weight: bold; }
+
+/* 王的機制警示:蓄力預警(⚠)用醒目的警告色+粗體,爆發攻擊(💥)用強調色,讓玩家一眼注意到 */
+.log-telegraph { color: #f59e0b; font-weight: bold; }
+.log-impact { color: #ef4444; font-weight: bold; }
 
 .choice-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 .choice-btn {
@@ -106,6 +112,13 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
   font-size: 15px;
 }
 .choice-btn:hover { border-color: var(--accent); background: #302a1a; }
+
+/* 裝備素質品質(對應同名同階裝備的浮動roll):讓玩家一眼分辨爛裝跟極品,不用自己算數值 */
+.quality-excellent { color: #f59e0b; font-weight: bold; }
+.quality-good { color: #4ade80; font-weight: bold; }
+.quality-normal { color: var(--ink-dim); }
+.quality-poor { color: #9ca3af; }
+.quality-bad { color: #6b7280; font-style: italic; }
 
 .narrative-text {
   line-height: 1.6;

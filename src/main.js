@@ -378,7 +378,7 @@ function renderLootChoicePanel() {
     h('p', { class: 'hint' }, '只能挑選其中一件帶走,其餘遺物將隨之消散。'),
     ...choice.items.map((item, idx) =>
       h('div', { class: `item-card rarity-${item.tier}` }, [
-        h('div', {}, `${item.name}(${itemTierLabel(item.tier)}${item.classType ? `・${classNameZh(item.classType)}` : ''}) Lv${item.itemLevel} — ${statsText(item.stats)}`),
+        h('div', {}, itemLabel(item)),
         h('button', {
           class: 'btn primary',
           onclick: async () => {
@@ -489,11 +489,14 @@ function renderCombatPanel() {
     h('div', { style: 'height:8px' }),
     h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${playerPct}%` }), h('div', { class: 'bar-label' }, `你 ${c.playerHp}/${c.playerMaxHp}`)]),
     h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill mp', style: `width:${mpPct}%` }), h('div', { class: 'bar-label' }, `真力 ${c.playerMp}/${c.playerMaxMp}`)]),
-    h('div', { class: 'log-list', style: 'margin-top:12px;' }, c.log.map((l) => h('div', {}, l))),
+    h('div', {
+      class: 'log-list',
+      style: 'margin-top:12px;',
+    }, c.log.map((l) => h('div', { class: l.includes('⚠') ? 'log-telegraph' : l.includes('💥') ? 'log-impact' : '' }, l))),
 
-    // 技能欄:分排顯示——第一排單體攻擊、第二排範圍技能、第三排BUFF,不要全部擠在同一排
+    // 技能欄:分排顯示——第一排單體攻擊、第二排範圍技能、第三排BUFF、第四排防禦,不要全部擠在同一排
     h('h3', { style: 'margin-top:14px;font-size:15px;' }, '⚔ 技能'),
-    h('p', { class: 'hint', style: 'margin:2px 0 6px;' }, '傷害為未扣敵方防禦、未計會心的預估區間,實際命中會依對象浮動。'),
+    h('p', { class: 'hint', style: 'margin:2px 0 6px;' }, '傷害為未扣敵方防禦、未計會心的預估區間,實際命中會依對象浮動。看到⚠警示代表敵人正在蓄力,考慮這回合防禦!'),
     h('div', { class: 'skill-bar', style: 'flex-direction:column;align-items:stretch;' }, [
       h('div', { class: 'skill-row' }, [
         h('span', { class: 'skill-row-label' }, '單體'),
@@ -516,6 +519,10 @@ function renderCombatPanel() {
         level >= skills.buff.unlockLevel
           ? h('button', { class: 'skill-btn', title: skills.buff.desc, onclick: () => doCombatAction('buff') }, `${skills.buff.name}(MP${skills.buff.mpCost})`)
           : h('button', { class: 'skill-btn locked', disabled: true }, `🔒${skills.buff.name}(Lv.${skills.buff.unlockLevel})`),
+      ]),
+      h('div', { class: 'skill-row' }, [
+        h('span', { class: 'skill-row-label' }, '防禦'),
+        h('button', { class: 'skill-btn defend', title: '這回合不輸出,但敵方攻擊傷害減半——用來應付敵人蓄力的重擊', onclick: () => doCombatAction('defend') }, '防禦(減傷50%)'),
       ]),
     ]),
 
@@ -555,9 +562,28 @@ function logPanel() {
 }
 
 // ---- 裝備畫面 ----
+// 裝備素質品質(對應後端 rollQuality,0~1):決定顯示的品質標籤與顏色,
+// 讓玩家一眼就能分辨同名同階裝備是「爛裝」還是「極品」,不用自己心算數值落在哪個區間。
+function rollQualityInfo(q) {
+  const v = q == null ? 0.5 : q;
+  if (v >= 0.85) return { label: '極品', className: 'quality-excellent' };
+  if (v >= 0.6) return { label: '優良', className: 'quality-good' };
+  if (v >= 0.4) return { label: '普通', className: 'quality-normal' };
+  if (v >= 0.15) return { label: '不佳', className: 'quality-poor' };
+  return { label: '劣質', className: 'quality-bad' };
+}
+
+// itemLabel 回傳可混合字串與DOM節點的陣列(而非單純字串),才能插入有顏色的品質標籤;
+// 呼叫端一律用陣列形式當作 h() 的 children,不要用樣板字串插值(那樣會把DOM節點轉成無意義文字)。
 function itemLabel(item) {
   const enhanceText = item.enhanceLevel > 0 ? ` +${item.enhanceLevel}` : '';
-  return `${item.name}${enhanceText}(${itemTierLabel(item.tier)}${item.classType ? `・${classNameZh(item.classType)}` : ''}) Lv${item.itemLevel} — ${statsText(item.stats)}`;
+  const q = rollQualityInfo(item.rollQuality);
+  return [
+    `${item.name}${enhanceText}(${itemTierLabel(item.tier)}${item.classType ? `・${classNameZh(item.classType)}` : ''})`,
+    ' ',
+    h('span', { class: q.className }, `[${q.label}]`),
+    ` Lv${item.itemLevel} — ${statsText(item.stats)}`,
+  ];
 }
 
 const POTENTIAL_TIER_LABEL = { rare: '稀有', epic: '史詩', legendary: '傳說' };
@@ -629,7 +655,7 @@ function renderInventory() {
     h('p', { class: 'hint' }, '武器/防具各1格;飾品(戒指/護符/項鍊/徽章)共2格,兩格用途相同、可任意放置,不分種類。'),
     ...Object.entries(s.equipment).map(([slot, item]) =>
       h('div', { class: 'item-card' }, [
-        h('div', {}, `【${slotLabelZh(slot)}】 ${item ? itemLabel(item) : '(空)'}`),
+        h('div', {}, item ? [`【${slotLabelZh(slot)}】 `, ...itemLabel(item)] : `【${slotLabelZh(slot)}】(空)`),
         item ? h('button', { class: 'btn', onclick: async () => { await api.unequip(slot); await refreshInvState(); } }, '卸下') : null,
         item ? renderEnhanceControls(item) : null,
       ])

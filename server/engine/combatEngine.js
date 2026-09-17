@@ -18,10 +18,11 @@ function pick(arr) {
 
 // 依「等級線性基礎值 + 攻擊力*固定係數」計算單次攻擊傷害(coeff 預設 1,代表一般攻擊/敵方普攻;
 // 技能傷害則傳入該技能固定的 coeff)。level 為攻擊方等級,def 為受擊方防禦。
-export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1 }) {
+// resistPct:受擊方對此傷害類型(物理/魔法)的抗性,正值減傷、負值(弱點)增傷,套用在防禦力扣減之前。
+export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0 }) {
   const isCrit = Math.random() < critRate;
   const levelBase = LEVEL_BASE_COEF * level;
-  const raw = levelBase + atk * coeff;
+  const raw = (levelBase + atk * coeff) * (1 - resistPct);
   const varied = raw * (0.85 + Math.random() * 0.3);
   const mitigated = Math.max(1, Math.round(varied - def * 0.5));
   const amount = isCrit ? Math.round(mitigated * 1.6) : mitigated;

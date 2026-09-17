@@ -41,11 +41,12 @@ function loadSave(userId) {
   if (save.statPoints === undefined) save.statPoints = 0;
   if (!save.currentMapId) save.currentMapId = 'novice_plains';
 
-  // 舊存檔的裝備物件可能沒有 enhanceLevel/potential 欄位(此為後來新增的裝備強化系統),在此補上預設值
+  // 舊存檔的裝備物件可能沒有 enhanceLevel/potential/rollQuality 欄位(陸續新增的系統),在此補上預設值
   const backfillEnhanceFields = (item) => {
     if (!item) return item;
     if (item.enhanceLevel === undefined) item.enhanceLevel = 0;
     if (item.potential === undefined) item.potential = null;
+    if (item.rollQuality === undefined) item.rollQuality = 0.5; // 舊裝備沒有品質浮動資料,視為「普通」品質顯示
     return item;
   };
   GEAR_SLOTS.forEach((slot) => backfillEnhanceFields(save.equipment[slot]));
@@ -109,7 +110,18 @@ function publicState(save) {
 // ---- 怪物/裝備輔助 ----
 function instantiateEnemy(monsterId) {
   const m = getMonster(monsterId);
-  return { monsterId: m.id, name: m.name, level: m.level, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, critRate: m.critRate, exp: m.exp, tier: m.tier || 'normal', dropTable: m.dropTable };
+  return {
+    monsterId: m.id, name: m.name, level: m.level, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, critRate: m.critRate, exp: m.exp, tier: m.tier || 'normal', dropTable: m.dropTable,
+    // 小王/大王機制:抗性、狂暴、蓄力技能(一般小怪沒有這些欄位,預設值等同無此機制)
+    physicalResistPct: m.physicalResistPct || 0,
+    magicResistPct: m.magicResistPct || 0,
+    enrageHpPct: m.enrageHpPct ?? null,
+    enrageAtkMult: m.enrageAtkMult ?? null,
+    enraged: false,
+    chargeSkill: m.chargeSkill || null,
+    charging: false,
+    turnCounter: 0,
+  };
 }
 
 // 個人進度制的小王/大王重生判定:每位玩家各地圖獨立計時,時間到才有機會純機率觸發遭遇(不是全服搶王)
@@ -544,6 +556,10 @@ export default function gameRoutes() {
         lines.push(`使用了${potion.name},恢復 ${amt} 點真力。`);
       }
       playerActed = true;
+    } else if (action === 'defend') {
+      // 防禦:這回合不輸出,但敵方攻擊傷害減半——用來應付王的蓄力爆發,是「攻擊以外」的真正戰術選擇
+      lines.push('你收起攻勢,擺出防禦姿態,準備抵禦接下來的攻擊!');
+      playerActed = true;
     } else if (action === 'basic' || action === 'aoe' || action === 'buff') {
       const skill = cls.skills[action];
       if (save.level < skill.unlockLevel) {
@@ -556,19 +572,21 @@ export default function gameRoutes() {
       const atkStat = cls.attackType === 'matk' ? stats.matk : stats.atk;
       const critRate = stats.critRate + sumBuffValue(combat.buffs, 'critRatePct');
       const atkMult = 1 + sumBuffValue(combat.buffs, 'atkPct');
+      // 王的物理/魔法抗性依玩家攻擊類型(matk=魔法/atk=物理)套用,一般小怪無此欄位則等同無抗性
+      const resistFor = (target) => (cls.attackType === 'matk' ? target.magicResistPct : target.physicalResistPct) || 0;
 
       if (action === 'basic') {
         const idx = Number.isInteger(targetIndex) && combat.enemies[targetIndex]?.hp > 0 ? targetIndex : combat.enemies.findIndex((e) => e.hp > 0);
         const target = combat.enemies[idx];
         if (!target) return res.status(400).json({ error: '目標無效' });
-        const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate });
+        const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
         target.hp = Math.max(0, target.hp - amount);
         lines.push(`你施展「${skill.name}」!` + narrateAttack({ attackerName: '你', defenderName: target.name, amount, isCrit }));
       } else if (action === 'aoe') {
         lines.push(`你施展「${skill.name}」,席捲全場!`);
         combat.enemies.forEach((target) => {
           if (target.hp <= 0) return;
-          const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate });
+          const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
           target.hp = Math.max(0, target.hp - amount);
           lines.push(narrateAttack({ attackerName: '你', defenderName: target.name, amount, isCrit }));
         });
@@ -587,11 +605,40 @@ export default function gameRoutes() {
     }
 
     if (playerActed && combat.playerHp > 0) {
+      const defending = action === 'defend';
       aliveEnemies().forEach((enemy) => {
         if (combat.playerHp <= 0) return;
+
+        // 狂暴判定:血量低於門檻且尚未狂暴過,永久提升攻擊力(只觸發一次,王機制之一)
+        if (enemy.enrageHpPct != null && !enemy.enraged && enemy.hp / enemy.maxHp <= enemy.enrageHpPct) {
+          enemy.enraged = true;
+          enemy.atk = Math.round(enemy.atk * enemy.enrageAtkMult);
+          lines.push(`⚠ ${enemy.name}的傷勢激起了狂暴,攻擊力大幅提升!`);
+        }
+
+        // 蓄力技能判定:蓄力中的這回合直接爆發攻擊;否則依回合數判斷是否改為蓄力(蓄力當回合不攻擊,只預警)
+        let isChargeRelease = false;
+        if (enemy.charging) {
+          isChargeRelease = true;
+          enemy.charging = false;
+        } else if (enemy.chargeSkill) {
+          enemy.turnCounter += 1;
+          if (enemy.turnCounter % enemy.chargeSkill.triggerEveryTurns === 0) {
+            enemy.charging = true;
+            lines.push(`⚠ ${enemy.name}${enemy.chargeSkill.telegraphText}`);
+            return; // 蓄力中,這回合不攻擊——玩家下回合要有所準備(防禦/吃藥)
+          }
+        }
+
         const { amount, isCrit } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: stats.def, critRate: enemy.critRate });
-        combat.playerHp = Math.max(0, combat.playerHp - amount);
-        lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', amount, isCrit }));
+        const boosted = isChargeRelease ? Math.round(amount * enemy.chargeSkill.dmgMult) : amount;
+        const finalAmount = defending ? Math.max(1, Math.ceil(boosted * 0.5)) : boosted;
+        combat.playerHp = Math.max(0, combat.playerHp - finalAmount);
+        if (isChargeRelease) {
+          lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${defending ? '(防禦大幅減輕了衝擊)' : ''}。`);
+        } else {
+          lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', amount: finalAmount, isCrit }) + (defending ? '(防禦減傷)' : ''));
+        }
       });
       combat.buffs = tickBuffs(combat.buffs);
 

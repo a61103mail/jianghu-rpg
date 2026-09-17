@@ -13,6 +13,14 @@ const BOSS_ENHANCE_DROPS = [
   { id: 'scroll_accessory', kind: 'scroll', chance: 0.2, min: 1, max: 1 },
   { id: 'cube_potential', kind: 'cube', chance: 0.15, min: 1, max: 1 },
 ];
+
+// 小王/大王的戰鬥機制(一般小怪不套用,維持簡單):
+// - physicalResistPct / magicResistPct:對該傷害類型的抗性(正值減傷、負值代表弱點增傷),
+//   讓「派哪個職業去打這隻王」變成真正的策略選擇,而不是誰打都一樣。
+// - enrageHpPct / enrageAtkMult:血量低於門檻時觸發狂暴,攻擊力永久提升,製造「速戰速決」的壓力。
+// - chargeSkill:每隔數回合蓄力一次,蓄力當回合不攻擊、明確預警,下回合爆發高倍傷害——
+//   讓玩家有「這回合該不該防禦」的即時判斷,而不是無腦攻擊到底。
+const ENRAGE_DEFAULT = { enrageHpPct: 0.3, enrageAtkMult: 1.35 };
 export const MONSTERS = {
   // ---- 新手平原(Lv1~6) ----
   slime: {
@@ -34,6 +42,9 @@ export const MONSTERS = {
   },
   slime_king: {
     id: 'slime_king', name: '史萊姆王', level: 6, hp: 260, atk: 12, def: 5, critRate: 0.08, exp: 90, tier: 'miniboss',
+    physicalResistPct: -0.15, magicResistPct: 0.15, // 黏液之軀:físico容易砍中(弱)、魔法難以穿透(抗)
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '黏液噴濺', telegraphText: '的軀體開始劇烈鼓動,似乎在醞釀噴發!', triggerEveryTurns: 4, dmgMult: 2.2 },
     dropTable: [
       { id: 'slime_core', kind: 'rare_material', shop: 'magic', chance: 0.4, min: 1, max: 1 },
       { id: 'slime_jelly', kind: 'junk', chance: 1, min: 3, max: 6 },
@@ -42,6 +53,9 @@ export const MONSTERS = {
   },
   boar_lord: {
     id: 'boar_lord', name: '巨牙野豬王', level: 8, hp: 480, atk: 18, def: 8, critRate: 0.1, exp: 220, tier: 'boss',
+    physicalResistPct: 0.15, magicResistPct: -0.15, // 厚皮硬骨:扛得住物理、怕魔法
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '狂怒衝撞', telegraphText: '刨地怒吼,蓄勢待發準備衝鋒!', triggerEveryTurns: 4, dmgMult: 2.4 },
     dropTable: [
       { id: 'boar_fang', kind: 'rare_material', shop: 'blacksmith', chance: 0.5, min: 1, max: 2 },
       { id: 'boar_hide', kind: 'junk', chance: 1, min: 4, max: 8 },
@@ -66,6 +80,9 @@ export const MONSTERS = {
   },
   goblin_captain: {
     id: 'goblin_captain', name: '哥布林隊長', level: 12, hp: 520, atk: 13, def: 10, critRate: 0.12, exp: 260, tier: 'miniboss',
+    physicalResistPct: 0.1, magicResistPct: -0.1, // 披甲士兵:略抗物理、略怕魔法
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '蓄力重斬', telegraphText: '將兵器高高舉起,似乎要使出全力一擊!', triggerEveryTurns: 4, dmgMult: 2.3 },
     dropTable: [
       { id: 'captain_insignia', kind: 'rare_material', shop: 'leather', chance: 0.4, min: 1, max: 1 },
       { id: 'goblin_ear', kind: 'junk', chance: 1, min: 4, max: 7 },
@@ -74,6 +91,9 @@ export const MONSTERS = {
   },
   goblin_chieftain: {
     id: 'goblin_chieftain', name: '哥布林酋長', level: 14, hp: 950, atk: 23, def: 14, critRate: 0.14, exp: 620, tier: 'boss',
+    physicalResistPct: 0.15, magicResistPct: -0.15, // 重甲統帥:更抗物理、更怕魔法
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '酋長怒吼衝擊', telegraphText: '高舉戰斧仰天怒吼,殺氣逐漸凝聚!', triggerEveryTurns: 4, dmgMult: 2.5 },
     dropTable: [
       { id: 'chieftain_totem', kind: 'rare_material', shop: 'magic', chance: 0.5, min: 1, max: 2 },
       { id: 'goblin_bow_string', kind: 'junk', chance: 1, min: 5, max: 9 },
@@ -98,6 +118,9 @@ export const MONSTERS = {
   },
   mine_spider_queen: {
     id: 'mine_spider_queen', name: '礦坑蜘蛛后', level: 18, hp: 830, atk: 16, def: 16, critRate: 0.15, exp: 520, tier: 'miniboss',
+    physicalResistPct: -0.15, magicResistPct: 0.15, // 節肢軀體怕物理、絲網體質抗魔法
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '蛛絲纏繞', telegraphText: '吐出大量蛛絲,似乎在準備一記致命纏繞!', triggerEveryTurns: 4, dmgMult: 2.3 },
     dropTable: [
       { id: 'spider_silk_gland', kind: 'rare_material', shop: 'leather', chance: 0.4, min: 1, max: 1 },
       { id: 'bat_wing', kind: 'junk', chance: 1, min: 5, max: 8 },
@@ -106,6 +129,9 @@ export const MONSTERS = {
   },
   stone_golem: {
     id: 'stone_golem', name: '石巨人', level: 20, hp: 1510, atk: 34, def: 24, critRate: 0.1, exp: 1350, tier: 'boss',
+    physicalResistPct: 0.3, magicResistPct: -0.2, // 全身岩石:重扛物理,但法術能直接打入裂縫
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '碎石重擊', telegraphText: '緩緩舉起巨大的石拳,大地為之震動!', triggerEveryTurns: 4, dmgMult: 2.6 },
     dropTable: [
       { id: 'golem_core', kind: 'rare_material', shop: 'blacksmith', chance: 0.5, min: 1, max: 2 },
       { id: 'rat_tail', kind: 'junk', chance: 1, min: 6, max: 10 },
@@ -130,6 +156,9 @@ export const MONSTERS = {
   },
   swamp_witch: {
     id: 'swamp_witch', name: '沼澤女巫', level: 24, hp: 1220, atk: 23, def: 22, critRate: 0.18, exp: 980, tier: 'miniboss',
+    physicalResistPct: -0.15, magicResistPct: 0.25, // 施法者體質:近戰打得動,但自身法術屏障抗魔
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '詛咒凝聚', telegraphText: '喃喃念咒,周身黑氣逐漸凝聚成形!', triggerEveryTurns: 4, dmgMult: 2.4 },
     dropTable: [
       { id: 'witch_charm', kind: 'rare_material', shop: 'magic', chance: 0.4, min: 1, max: 1 },
       { id: 'tentacle_ooze', kind: 'junk', chance: 1, min: 6, max: 9 },
@@ -138,6 +167,9 @@ export const MONSTERS = {
   },
   swamp_drake: {
     id: 'swamp_drake', name: '遠古沼澤龍', level: 26, hp: 2210, atk: 48, def: 30, critRate: 0.15, exp: 2400, tier: 'boss',
+    physicalResistPct: -0.1, magicResistPct: 0.2, // 古龍鱗片:天生抗魔,鱗片縫隙仍可被物理攻擊突破
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '沼氣吐息', telegraphText: '深吸一口氣,喉間泛起詭異的綠光!', triggerEveryTurns: 4, dmgMult: 2.6 },
     dropTable: [
       { id: 'drake_scale', kind: 'rare_material', shop: 'church', chance: 0.5, min: 1, max: 2 },
       { id: 'toad_venom_sac', kind: 'junk', chance: 1, min: 7, max: 11 },
@@ -162,6 +194,9 @@ export const MONSTERS = {
   },
   fallen_knight: {
     id: 'fallen_knight', name: '墮落騎士', level: 29, hp: 1550, atk: 32, def: 32, critRate: 0.18, exp: 1600, tier: 'miniboss',
+    physicalResistPct: 0.2, magicResistPct: -0.15, // 一身重鎧:扛物理,但詛咒纏身怕魔法
+    ...ENRAGE_DEFAULT,
+    chargeSkill: { name: '絕望重劈', telegraphText: '雙手緊握巨劍高舉過頂,散發不祥的氣息!', triggerEveryTurns: 4, dmgMult: 2.5 },
     dropTable: [
       { id: 'knight_emblem', kind: 'rare_material', shop: 'blacksmith', chance: 0.45, min: 1, max: 1 },
       { id: 'guardian_plating', kind: 'junk', chance: 1, min: 7, max: 10 },
@@ -170,6 +205,9 @@ export const MONSTERS = {
   },
   king_of_ruins: {
     id: 'king_of_ruins', name: '遺跡之王', level: 30, hp: 2820, atk: 61, def: 40, critRate: 0.2, exp: 3800, tier: 'boss',
+    physicalResistPct: 0.1, magicResistPct: 0.1, // 終極王者:對兩種傷害皆有一定抗性,真正的挑戰在於狂暴與蓄力節奏
+    enrageHpPct: 0.35, enrageAtkMult: 1.5,
+    chargeSkill: { name: '王座審判', telegraphText: '緩緩起身,王座周圍的遺跡碎石開始漂浮!', triggerEveryTurns: 3, dmgMult: 2.8 },
     dropTable: [
       { id: 'king_crown_shard', kind: 'rare_material', shop: 'church', chance: 0.55, min: 1, max: 2 },
       { id: 'shadow_fragment', kind: 'junk', chance: 1, min: 8, max: 12 },
