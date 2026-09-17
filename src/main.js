@@ -15,7 +15,7 @@ function slotLabelZh(slot) { return SLOT_LABEL_ZH[slot] || slot; }
 const STAT_LABEL_ZH = {
   atk: '攻擊力', matk: '魔法攻擊力', def: '防禦力', hp: '氣血上限', mp: '真力上限',
   critRatePct: '會心率', hpRegenPct: '氣血回復', atkPowerPct: '攻擊強度%', defPct: '防禦%', hpPct: '氣血%',
-  str: 'STR力量', dex: 'DEX敏捷', int: 'INT智力', luk: 'LUK幸運',
+  str: '力量', dex: '敏捷', int: '智力', luk: '幸運',
 };
 function statLabelZh(key) { return STAT_LABEL_ZH[key] || key; }
 function statsText(stats) {
@@ -100,10 +100,10 @@ async function refreshState() {
 
 function statBlock(stats) {
   return h('div', { class: 'stat-grid' }, [
-    h('div', {}, [h('b', {}, 'STR '), String(stats.str)]),
-    h('div', {}, [h('b', {}, 'DEX '), String(stats.dex)]),
-    h('div', {}, [h('b', {}, 'INT '), String(stats.int)]),
-    h('div', {}, [h('b', {}, 'LUK '), String(stats.luk)]),
+    h('div', {}, [h('b', {}, '力量 '), String(stats.str)]),
+    h('div', {}, [h('b', {}, '敏捷 '), String(stats.dex)]),
+    h('div', {}, [h('b', {}, '智力 '), String(stats.int)]),
+    h('div', {}, [h('b', {}, '幸運 '), String(stats.luk)]),
     h('div', {}, [h('b', {}, '物攻 '), String(stats.atk)]),
     h('div', {}, [h('b', {}, '魔攻 '), String(stats.matk)]),
     h('div', {}, [h('b', {}, '防禦 '), String(stats.def)]),
@@ -195,7 +195,7 @@ function renderAuth() {
 function renderChooseClass() {
   const box = h('div', { class: 'panel' }, [
     h('h1', {}, '選擇職業'),
-    h('p', { class: 'hint' }, '每個職業都有 4 招固定技能:基本攻擊、範圍技能、BUFF技能、光環(被動)。'),
+    h('p', { class: 'hint' }, '每個職業都有 4 招固定技能:基本攻擊、範圍技能、增益技能、光環(被動)。'),
     ...S.classes.map((cls) =>
       h('div', {
         class: 'system-card',
@@ -256,10 +256,10 @@ function renderStatAllocator() {
   return h('div', { class: 'panel' }, [
     h('h3', {}, `屬性配點(剩餘 ${remaining} 點)`),
     h('p', { class: 'hint', style: 'color:#c9a227;' }, `本職業配點建議:${s.buildGuide}`),
-    statRow('str', 'STR 力量'),
-    statRow('dex', 'DEX 敏捷'),
-    statRow('int', 'INT 智力'),
-    statRow('luk', 'LUK 幸運'),
+    statRow('str', '力量'),
+    statRow('dex', '敏捷'),
+    statRow('int', '智力'),
+    statRow('luk', '幸運'),
     h('button', {
       class: 'btn primary',
       onclick: async () => {
@@ -324,7 +324,7 @@ function renderHub() {
 
   // 技能一覽:先前技能只有戰鬥中才看得到,城鎮完全沒地方確認解鎖狀態,玩家升級後不知道去哪確認。
   // 每招濃縮成一行(說明文字移到 title 提示,滑鼠停留才顯示),不佔用太多城鎮畫面的垂直空間。
-  const SKILL_TYPE_LABEL = { single: '單體攻擊', aoe: '範圍攻擊', buff: 'BUFF', aura: '光環(被動)' };
+  const SKILL_TYPE_LABEL = { single: '單體攻擊', aoe: '範圍攻擊', buff: '增益', aura: '光環(被動)' };
   const skillList = [s.skills.basic, s.skills.aoe, s.skills.buff, s.skills.aura];
   const skillsPanel = h('div', { class: 'panel' }, [
     h('h3', {}, `技能(Lv.${s.level})`),
@@ -334,7 +334,7 @@ function renderHub() {
         class: 'item-card',
         style: 'padding:5px 10px;',
         title: unlocked ? sk.desc : `Lv.${sk.unlockLevel} 解鎖 — ${sk.desc}`,
-      }, `${unlocked ? '' : '🔒 '}${sk.name}(${SKILL_TYPE_LABEL[sk.type] || sk.type}${sk.mpCost != null ? `・MP${sk.mpCost}` : ''}${unlocked ? '' : `・Lv.${sk.unlockLevel}解鎖`})`);
+      }, `${unlocked ? '' : '🔒 '}${sk.name}(${SKILL_TYPE_LABEL[sk.type] || sk.type}${sk.mpCost != null ? `・真力${sk.mpCost}` : ''}${unlocked ? '' : `・Lv.${sk.unlockLevel}解鎖`})`);
     }),
   ]);
 
@@ -544,13 +544,13 @@ function renderCombatPanel() {
       h('div', { class: 'skill-row' }, [
         h('span', { class: 'skill-row-label' }, '範圍'),
         level >= skills.aoe.unlockLevel
-          ? h('button', { class: 'skill-btn', title: `${skills.aoe.desc}(預估未扣敵方防禦)`, onclick: () => doCombatAction('aoe') }, `${skills.aoe.name}(MP${skills.aoe.mpCost}, 每敵${estimateSkillDamage(skills.aoe)})`)
+          ? h('button', { class: 'skill-btn', title: `${skills.aoe.desc}(預估未扣敵方防禦)`, onclick: () => doCombatAction('aoe') }, `${skills.aoe.name}(真力${skills.aoe.mpCost}, 每敵${estimateSkillDamage(skills.aoe)})`)
           : h('button', { class: 'skill-btn locked', disabled: true }, `🔒${skills.aoe.name}(Lv.${skills.aoe.unlockLevel})`),
       ]),
       h('div', { class: 'skill-row' }, [
-        h('span', { class: 'skill-row-label' }, 'BUFF'),
+        h('span', { class: 'skill-row-label' }, '增益'),
         level >= skills.buff.unlockLevel
-          ? h('button', { class: 'skill-btn', title: skills.buff.desc, onclick: () => doCombatAction('buff') }, `${skills.buff.name}(MP${skills.buff.mpCost})`)
+          ? h('button', { class: 'skill-btn', title: skills.buff.desc, onclick: () => doCombatAction('buff') }, `${skills.buff.name}(真力${skills.buff.mpCost})`)
           : h('button', { class: 'skill-btn locked', disabled: true }, `🔒${skills.buff.name}(Lv.${skills.buff.unlockLevel})`),
       ]),
       h('div', { class: 'skill-row' }, [
@@ -929,19 +929,24 @@ function renderParty() {
     ]) : h('div', {}, [
       h('div', {}, `隊伍代碼:${S.party.code}`),
       h('div', {}, `成員:${S.party.members.map((m) => m.username).join('、')}`),
-      !S.party.combat ? h('div', { class: 'card-grid' }, (S.state.maps || []).map((m) =>
+      // 戰鬥「進行中」(combat 存在且 ended 為 null)才需要隱藏地圖列表/離隊按鈕——一旦分出勝負
+      // (combat.ended 為 'win' 或 'lose'),就要讓玩家能繼續選地圖再戰或離隊,不能卡在結果畫面
+      // 什麼都按不了。先前沒有處理「戰鬥已結束」這個中間狀態,玩家(尤其單人挑戰,很容易落敗)
+      // 打完一場就完全卡住,連「離隊」都點不到。
+      (!S.party.combat || S.party.combat.ended) ? h('div', { class: 'card-grid' }, (S.state.maps || []).map((m) =>
         h('div', { class: 'item-card' }, [
           h('div', {}, `${m.name}(Lv.${m.levelRange[0]}~${m.levelRange[1]})`),
           h('button', { class: 'btn primary', onclick: () => sock.emit('party:start-bounty', { mapId: m.id }) }, '挑戰副本'),
         ])
       )) : null,
-      !S.party.combat ? h('button', { class: 'btn', onclick: () => { sock.emit('party:leave'); S.party = null; render(); } }, '離隊') : null,
+      (!S.party.combat || S.party.combat.ended) ? h('button', { class: 'btn', onclick: () => { sock.emit('party:leave'); S.party = null; render(); } }, '離隊') : null,
     ]),
     S.party?.combat ? renderPartyCombat(S.party.combat) : null,
   ]);
-  // 副本戰鬥中也改用精簡標題列,理由同單人戰鬥(見 combatTopBar)——同樣每回合都要點技能,
-  // 不該每次都被完整屬性列+導覽按鈕擠壓掉空間。
-  mount([S.party?.combat ? combatTopBar() : topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  // 副本戰鬥「進行中」才改用精簡標題列(理由同單人戰鬥,見 combatTopBar)——一旦分出勝負
+  // (combat.ended 有值),要換回完整標題列,才能看到導覽分頁,不然畫面卡在精簡列、切不去別的畫面。
+  const inActiveCombat = S.party?.combat && !S.party.combat.ended;
+  mount([inActiveCombat ? combatTopBar() : topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
 }
 
 function renderPartyCombat(combat) {
@@ -985,13 +990,13 @@ function renderPartyCombat(combat) {
           h('div', { class: 'skill-row' }, [
             h('span', { class: 'skill-row-label' }, '範圍'),
             level >= selfClassSkills.aoe.unlockLevel
-              ? h('button', { class: 'skill-btn', onclick: () => doAction('aoe') }, `${selfClassSkills.aoe.name}(MP${selfClassSkills.aoe.mpCost})`)
+              ? h('button', { class: 'skill-btn', onclick: () => doAction('aoe') }, `${selfClassSkills.aoe.name}(真力${selfClassSkills.aoe.mpCost})`)
               : h('button', { class: 'skill-btn locked', disabled: true }, `🔒${selfClassSkills.aoe.name}(Lv.${selfClassSkills.aoe.unlockLevel})`),
           ]),
           h('div', { class: 'skill-row' }, [
-            h('span', { class: 'skill-row-label' }, 'BUFF'),
+            h('span', { class: 'skill-row-label' }, '增益'),
             level >= selfClassSkills.buff.unlockLevel
-              ? h('button', { class: 'skill-btn', onclick: () => doAction('buff') }, `${selfClassSkills.buff.name}(MP${selfClassSkills.buff.mpCost})`)
+              ? h('button', { class: 'skill-btn', onclick: () => doAction('buff') }, `${selfClassSkills.buff.name}(真力${selfClassSkills.buff.mpCost})`)
               : h('button', { class: 'skill-btn locked', disabled: true }, `🔒${selfClassSkills.buff.name}(Lv.${selfClassSkills.buff.unlockLevel})`),
           ]),
           h('div', { class: 'skill-row' }, [

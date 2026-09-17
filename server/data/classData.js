@@ -12,7 +12,7 @@ export const CLASSES = {
     weaponShop: 'blacksmith', // 決定武器/防具對應的商店(見 itemData.js)
     attackType: 'atk', // 此職業技能傷害採用的攻擊屬性('atk'=物理,'matk'=魔法)
     primaryStat: 'str',
-    buildGuide: '主力輸出看 STR(決定物理攻擊力與氣血上限)。推薦配點:每 5 點約 3~4 點 STR、1~2 點 DEX(增加防禦與會心)。',
+    buildGuide: '主力輸出看力量(決定物理攻擊力與氣血上限)。推薦配點:每 5 點約 3~4 點力量、1~2 點敏捷(增加防禦與會心)。',
     baseStat: { str: 12, dex: 6, int: 3, luk: 4 },
     baseHp: 100,
     baseMp: 20,
@@ -32,7 +32,7 @@ export const CLASSES = {
     weaponShop: 'magic',
     attackType: 'matk',
     primaryStat: 'int',
-    buildGuide: '主力輸出「完全」看 INT(魔法攻擊力與真力上限的唯一來源,STR/DEX對傷害幾乎沒有幫助)。推薦幾乎全點 INT,若有餘裕可加 LUK 衝會心率。',
+    buildGuide: '主力輸出「完全」看智力(魔法攻擊力與真力上限的唯一來源,力量/敏捷對傷害幾乎沒有幫助)。推薦幾乎全點智力,若有餘裕可加幸運衝會心率。',
     baseStat: { str: 3, dex: 5, int: 13, luk: 4 },
     baseHp: 65,
     baseMp: 50,
@@ -52,7 +52,7 @@ export const CLASSES = {
     weaponShop: 'church',
     attackType: 'matk',
     primaryStat: 'int',
-    buildGuide: '雖然有治療技能,但牧師不是「點STR的坦克」——主力輸出同樣看 INT(魔法攻擊力),治療量則固定看氣血上限。推薦主點 INT,其餘點 LUK 衝會心,或少量 STR 增加氣血與生存。',
+    buildGuide: '雖然有治療技能,但牧師不是「點力量的坦克」——主力輸出同樣看智力(魔法攻擊力),治療量則固定看氣血上限。推薦主點智力,其餘點幸運衝會心,或少量力量增加氣血與生存。',
     baseStat: { str: 5, dex: 4, int: 11, luk: 6 },
     baseHp: 80,
     baseMp: 45,
@@ -72,7 +72,7 @@ export const CLASSES = {
     weaponShop: 'leather',
     attackType: 'atk',
     primaryStat: 'dex',
-    buildGuide: '主力輸出看 DEX(弓箭手是特例,DEX才是物理攻擊力的主要來源,不是STR)。推薦幾乎全點 DEX,若有餘裕可加 LUK 進一步提升會心率。',
+    buildGuide: '主力輸出看敏捷(弓箭手是特例,敏捷才是物理攻擊力的主要來源,不是力量)。推薦幾乎全點敏捷,若有餘裕可加幸運進一步提升會心率。',
     baseStat: { str: 5, dex: 13, int: 3, luk: 5 },
     baseHp: 85,
     baseMp: 30,
@@ -87,13 +87,13 @@ export const CLASSES = {
   },
 };
 
-// STR/DEX/INT/LUK 四圍屬性的實際效果說明(對應 characterEngine.js 的 computeStats 公式),
+// 力量/敏捷/智力/幸運 四圍屬性的實際效果說明(對應 characterEngine.js 的 computeStats 公式),
 // 供前端配點畫面顯示,讓玩家清楚知道「點這個屬性到底在幹嘛」,不必自己猜或去看程式碼。
 export const STAT_INFO = {
-  str: { label: 'STR 力量', desc: '提升氣血上限與防禦;對戰士/牧師/法師而言也是物理攻擊力的來源(弓箭手例外,弓箭手物理攻擊力改看DEX)。' },
-  dex: { label: 'DEX 敏捷', desc: '提升防禦、會心率、迴避率(上限80%,對手攻擊有機率直接落空);對弓箭手而言是物理攻擊力的主要來源。弓箭手全點DEX可堆出很高的迴避率但氣血會偏低,戰士配點多在STR、迴避率天生較低但氣血防禦更高——這是兩職業的定位差異。' },
-  int: { label: 'INT 智力', desc: '提升真力上限,是法師與牧師「魔法攻擊力」的唯一來源——這兩個職業的技能傷害完全看INT,不看STR/DEX。' },
-  luk: { label: 'LUK 幸運', desc: '提升會心率,對任何職業都有效但增幅較小,通常作為次要加點。' },
+  str: { label: '力量', desc: '提升氣血上限與防禦;對戰士/牧師/法師而言也是物理攻擊力的來源(弓箭手例外,弓箭手物理攻擊力改看敏捷)。' },
+  dex: { label: '敏捷', desc: '提升防禦、會心率、迴避率(上限80%,對手攻擊有機率直接落空);對弓箭手而言是物理攻擊力的主要來源。弓箭手全點敏捷可堆出很高的迴避率但氣血會偏低,戰士配點多在力量、迴避率天生較低但氣血防禦更高——這是兩職業的定位差異。' },
+  int: { label: '智力', desc: '提升真力上限,是法師與牧師「魔法攻擊力」的唯一來源——這兩個職業的技能傷害完全看智力,不看力量/敏捷。' },
+  luk: { label: '幸運', desc: '提升會心率,對任何職業都有效但增幅較小,通常作為次要加點。' },
 };
 
 export const CLASS_ORDER = ['warrior', 'mage', 'priest', 'archer'];
