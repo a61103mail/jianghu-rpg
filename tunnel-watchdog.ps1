@@ -38,7 +38,10 @@ function Start-NewTunnel {
   while (-not $url -and $attempts -lt 30) {
     Start-Sleep -Seconds 1
     $content = Get-Content $tunnelLog -Raw
-    if ($content -match 'https://[a-z0-9-]+\.trycloudflare\.com') { $url = $matches[0] }
+    # cloudflared 內部有時會在日誌中提到 https://api.trycloudflare.com(呼叫其後端API的網址,不是真正的通道網址)。
+    # 真正的快速通道網址一定是「多個單字用連字號相連」的隨機字串(例如 thats-hair-basic-designing),
+    # 要求至少一個連字號,才不會誤抓到 api.trycloudflare.com 這種固定保留字。
+    if ($content -match 'https://[a-z0-9]+(-[a-z0-9]+)+\.trycloudflare\.com') { $url = $matches[0] }
     $attempts++
   }
   return [PSCustomObject]@{ Process = $proc; Url = $url; LogFile = $tunnelLog; StartTime = Get-Date }
