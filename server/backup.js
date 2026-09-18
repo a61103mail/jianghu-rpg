@@ -5,6 +5,7 @@
 // 3. importSnapshotIfEmpty() 在伺服器啟動時執行:只有在資料庫「目前完全是空的」(代表這是一個
 //    全新資料庫,例如換了新的 Turso 資料庫)且 data-snapshot.json 存在時,才會自動還原,
 //    不會覆蓋掉正在使用中的真實資料。
+// 4. resetAllData() 清空全部資料表(全新開始用),透過受保護的 /api/admin/reset-all 端點觸發。
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -13,7 +14,7 @@ import db from './db.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SNAPSHOT_PATH = path.join(__dirname, 'data-snapshot.json');
 
-const TABLES = ['users', 'saves', 'market_state', 'auction_listings', 'fallen_loot'];
+const TABLES = ['users', 'saves', 'market_state', 'auction_listings', 'fallen_loot', 'world_boss_state'];
 
 export async function exportSnapshot() {
   const snapshot = { exportedAt: new Date().toISOString(), tables: {} };
@@ -21,6 +22,17 @@ export async function exportSnapshot() {
     snapshot.tables[table] = await db.prepare(`SELECT * FROM ${table}`).all();
   }
   return snapshot;
+}
+
+// 清空全部資料表(帳號/存檔/市場/交易所/遺物/真王計時),回到全新空資料庫的狀態。
+// 不可逆操作,由呼叫端(index.js 的 /api/admin/reset-all)先驗證 token 才會執行到這裡。
+// saves 有外鍵參照 users,必須先清子表(saves)再清父表(users),否則違反外鍵約束。
+export async function resetAllData() {
+  const deleteOrder = ['saves', 'users', 'market_state', 'auction_listings', 'fallen_loot', 'world_boss_state'];
+  for (const table of deleteOrder) {
+    await db.exec(`DELETE FROM ${table}`);
+  }
+  return { reset: true, tables: deleteOrder, resetAt: new Date().toISOString() };
 }
 
 // 只有在 users 資料表目前完全是空的(=剛啟動的全新容器,還沒有任何人註冊過)才還原,

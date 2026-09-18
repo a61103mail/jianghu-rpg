@@ -10,7 +10,7 @@ import jwt from 'jsonwebtoken';
 import authRoutes from './routes/auth.js';
 import gameRoutes from './routes/game.js';
 import db from './db.js';
-import { exportSnapshot, importSnapshotIfEmpty } from './backup.js';
+import { exportSnapshot, importSnapshotIfEmpty, resetAllData } from './backup.js';
 import { computeStats, addLog, checkLevelUp } from './engine/characterEngine.js';
 import { depositFallenLoot } from './engine/fallenLootEngine.js';
 import { generateCommonGear } from './engine/itemEngine.js';
@@ -64,6 +64,17 @@ app.get('/api/admin/export', async (req, res) => {
   if (!ADMIN_BACKUP_TOKEN) return res.status(404).end();
   if (req.query.token !== ADMIN_BACKUP_TOKEN) return res.status(403).json({ error: '無權限' });
   res.json(await exportSnapshot());
+});
+
+// 全部資料清空重來:不可逆操作,清空全部帳號/存檔/市場/交易所/遺物/真王計時,回到全新開局的狀態。
+// 沿用跟 /api/admin/export 同一組 token 保護,GET 即可觸發(方便直接在瀏覽器網址列打開執行),
+// 沒有設定 ADMIN_BACKUP_TOKEN 時整個端點視同不存在。
+app.get('/api/admin/reset-all', async (req, res) => {
+  if (!ADMIN_BACKUP_TOKEN) return res.status(404).end();
+  if (req.query.token !== ADMIN_BACKUP_TOKEN) return res.status(403).json({ error: '無權限' });
+  const result = await resetAllData();
+  console.log('[admin] 已清空全部資料表,重新開始。');
+  res.json(result);
 });
 
 // 正式環境:後端順便把前端打包後的靜態檔案(../dist,由 npm run build 產生)一起提供出去,
@@ -243,6 +254,7 @@ io.on('connection', (socket) => {
           (dropTable || []).forEach((d) => {
             if (Math.random() < d.chance) {
               const amt = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
+              if (amt <= 0) return; // min:0 的掉落(如抉擇方塊)骰到0時,不加背包也不顯示戰報
               const enhanceItem = getEnhanceItem(d.id);
               if (enhanceItem) {
                 memberSave.consumables[d.id] = (memberSave.consumables[d.id] || 0) + amt;

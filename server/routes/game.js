@@ -11,7 +11,7 @@ import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen } fr
 import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from '../engine/combatEngine.js';
 import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand, craftSetItem } from '../engine/itemEngine.js';
 import { getSetInfo, getSetRecipesForShop, getSetRecipeById } from '../data/setGearData.js';
-import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot } from '../engine/marketEngine.js';
+import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot, buyEnhanceItemFromMarket } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
 import { rollEnhance, rollCube, getEnhanceItemAppliesToSlot, ENHANCE_MAX_USES, rollCubeChoicePreview, getPendingChoicePreview, clearChoicePreview } from '../engine/enhanceEngine.js';
@@ -123,7 +123,7 @@ function publicState(save) {
     equipment: save.equipment,
     inventory: save.inventory,
     materials: Object.entries(save.materials).filter(([, c]) => c > 0).map(([id, count]) => ({ id, name: getItem(id)?.name || id, kind: getItem(id)?.kind, count })),
-    potions: POTION_ORDER.map((id) => ({ id, name: getPotion(id).name, count: save.potions[id] || 0 })),
+    potions: POTION_ORDER.map((id) => ({ id, name: getPotion(id).name, kind: getPotion(id).kind, healPct: getPotion(id).healPct, count: save.potions[id] || 0 })),
     consumables: ENHANCE_ITEM_ORDER.map((id) => ({ id, name: getEnhanceItem(id).name, kind: getEnhanceItem(id).kind, appliesTo: getEnhanceItem(id).appliesTo, price: getEnhanceItem(id).price, count: save.consumables[id] || 0 })),
     currentMapId: save.currentMapId,
     maps: MAP_ORDER.map((id) => {
@@ -341,8 +341,16 @@ async function advanceVentureStage(save, map) {
     if (result.gained) {
       const rewardPenalty = overlevelPenaltyMultiplier(save.level, map);
       const amt = Math.max(1, Math.round((result.gained.min + Math.floor(Math.random() * (result.gained.max - result.gained.min + 1)) + 1) * rewardPenalty));
-      save.materials[result.gained.id] = (save.materials[result.gained.id] || 0) + amt;
-      lines = [`你專心採集了一陣,收穫${getItem(result.gained.id)?.name || result.gained.id} x${amt}。`];
+      // 抽到的可能是卷軸/方塊(強化消耗品),要存進 save.consumables,不能一律塞進 save.materials——
+      // 否則玩家「採集」奇遇拿到的卷軸/方塊會憑空消失(materials 分頁不會顯示,也無法拿去強化裝備)。
+      const enhanceItem = getEnhanceItem(result.gained.id);
+      if (enhanceItem) {
+        save.consumables[result.gained.id] = (save.consumables[result.gained.id] || 0) + amt;
+        lines = [`你專心採集了一陣,收穫${enhanceItem.name} x${amt}。`];
+      } else {
+        save.materials[result.gained.id] = (save.materials[result.gained.id] || 0) + amt;
+        lines = [`你專心採集了一陣,收穫${getItem(result.gained.id)?.name || result.gained.id} x${amt}。`];
+      }
     } else {
       lines = result.lines;
     }
@@ -731,6 +739,7 @@ export default function gameRoutes() {
           const dropPenalty = d.kind === 'rare_material' ? 1 : rewardPenalty;
           if (Math.random() < d.chance * dropPenalty) {
             const amt = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
+            if (amt <= 0) return; // min:0 的掉落(如抉擇方塊)骰到0時,不加背包也不顯示戰報,避免出現「xxx x0」
             // 卷軸/方塊屬於強化消耗品,存放於 save.consumables(跟一般材料的 save.materials 分開)
             const enhanceItem = getEnhanceItem(d.id);
             if (enhanceItem) {
@@ -926,8 +935,10 @@ export default function gameRoutes() {
     const amount = Math.max(1, Math.min(99, Math.floor(qty) || 1));
     const save = await loadSave(req.user.userId);
     const priceInfo = await getPotionPriceInfo(potionId);
-    if (save.gold < priceInfo.effectivePrice * amount) return res.status(400).json({ error: '金幣不足' });
+    if (priceInfo.stock < amount) return res.status(400).json({ error: `庫存不足(剩餘${priceInfo.stock}瓶),請等待雜貨店回收雜物補貨` });
+    if (save.gold < priceInfo.price * amount) return res.status(400).json({ error: '金幣不足' });
     const cost = await buyPotionFromMarket(potionId, amount);
+    if (cost == null) return res.status(400).json({ error: '庫存不足,請等待雜貨店回收雜物補貨' });
     if (save.gold < cost) return res.status(400).json({ error: '金幣不足(價格已變動,請重新嘗試)' });
     save.gold -= cost;
     save.potions[potionId] = (save.potions[potionId] || 0) + amount;
@@ -935,15 +946,17 @@ export default function gameRoutes() {
     res.json({ state: publicState(save), bought: amount, cost });
   });
 
-  // 購買強化卷軸/潛能方塊:固定金幣價格,存放於 save.consumables(跟藥水分開,避免混淆)
+  // 購買強化卷軸/潛能方塊:跟藥水一樣走全服供應庫存機制(見 marketEngine.js),庫存不足時無法購買,
+  // 存放於 save.consumables(跟藥水分開,避免混淆)。抉擇方塊已下架,一律回 400(只能靠打王取得)。
   router.post('/shop/buy-enhance-item', async (req, res) => {
     const { itemId, qty } = req.body || {};
     const enhanceItem = getEnhanceItem(itemId);
     if (!enhanceItem) return res.status(400).json({ error: '無此物品' });
     const amount = Math.max(1, Math.min(99, Math.floor(qty) || 1));
     const save = await loadSave(req.user.userId);
-    const cost = enhanceItem.price * amount;
-    if (save.gold < cost) return res.status(400).json({ error: '金幣不足' });
+    const cost = await buyEnhanceItemFromMarket(itemId, amount);
+    if (cost == null) return res.status(400).json({ error: '庫存不足或此物品已不開放購買(只能靠擊敗王取得)' });
+    if (save.gold < cost) return res.status(400).json({ error: '金幣不足(價格已變動,請重新嘗試)' });
     save.gold -= cost;
     save.consumables[itemId] = (save.consumables[itemId] || 0) + amount;
     await saveGame(req.user.userId, save);

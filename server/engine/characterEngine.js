@@ -62,13 +62,18 @@ function isItemUsable(item) {
 
 // 套裝效果(菁英2件2條/真王4件4條,見 setGearData.js):統計玩家目前裝備中每個 setId 各穿了幾件,
 // 依 tiers 的 count 門檻彙總已解鎖的效果加成。value 是百分比數字(如8代表8%),這裡轉成小數方便套用。
-function computeSetBonuses(save) {
+function countEquippedSets(save) {
   const setCounts = {};
   GEAR_SLOTS.forEach((slot) => {
     const item = save.equipment[slot];
     if (!isItemUsable(item) || !item.setId) return;
     setCounts[item.setId] = (setCounts[item.setId] || 0) + 1;
   });
+  return setCounts;
+}
+
+function computeSetBonuses(save) {
+  const setCounts = countEquippedSets(save);
   const bonuses = { atkPowerPct: 0, classSpecialPct: 0, allRawStatsPct: 0, allStatsExceptSpecialPct: 0 };
   Object.entries(setCounts).forEach(([setId, count]) => {
     const info = getSetInfo(setId);
@@ -78,6 +83,23 @@ function computeSetBonuses(save) {
     });
   });
   return bonuses;
+}
+
+// 供前端顯示「目前穿著套裝進度」:只列出玩家目前至少穿1件的套裝,附總部位數/已穿件數/
+// 完整效果定義(每個門檻是否已解鎖),玩家不用自己心算就能看出套裝效果觸發到哪裡(見套裝效果 Modal)。
+export function getEquippedSetProgress(save) {
+  const setCounts = countEquippedSets(save);
+  return Object.entries(setCounts).map(([setId, count]) => {
+    const info = getSetInfo(setId);
+    if (!info) return null;
+    return {
+      setId,
+      name: info.name,
+      pieces: info.pieces,
+      equippedCount: count,
+      tiers: info.tiers.map((t) => ({ ...t, unlocked: count >= t.count })),
+    };
+  }).filter(Boolean);
 }
 
 export function computeStats(save) {

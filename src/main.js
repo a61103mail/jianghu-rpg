@@ -9,6 +9,12 @@ const SHOP_ORDER = ['blacksmith', 'leather', 'magic', 'church', 'general'];
 const ITEM_TIER_LABEL = { common: '普通', rare: '稀有', epic: '超稀有', elite_set: '菁英套裝', trueboss_set: '真王套裝' };
 function itemTierLabel(tier) { return ITEM_TIER_LABEL[tier] || '普通'; }
 
+// 藥水按鈕文字統一格式,一定要帶回復量——先前只顯示名稱+持有數量,玩家完全不知道這瓶到底回多少,
+// 等於盲買盲用。4個使用藥水的地方(城鎮/戰鬥面板/王警示面板/組隊副本)都共用這個函式。
+function potionButtonLabel(p) {
+  return `${p.name}(回${p.kind === 'hp' ? '氣血' : '真力'}${Math.round((p.healPct || 0) * 100)}%,x${p.count})`;
+}
+
 // 裝備部位/屬性代碼一律翻成中文顯示,不要讓 weapon/atk/critRatePct 這種英文代碼直接出現在畫面上
 const SLOT_LABEL_ZH = { weapon: '武器', armor: '防具', offhand: '副手', accessory1: '飾品一', accessory2: '飾品二', accessory: '飾品' };
 function slotLabelZh(slot) { return SLOT_LABEL_ZH[slot] || slot; }
@@ -353,7 +359,7 @@ function renderHub() {
             render();
           } catch (e) { S.error = e.message; render(); }
         },
-      }, `使用${p.name}(x${p.count})`)
+      }, `使用${potionButtonLabel(p)}`)
     ),
     s.potions.every((p) => p.count === 0) ? h('div', { class: 'hint' }, '身上沒有任何藥水,可到雜貨店購買。') : null,
   ]);
@@ -520,7 +526,7 @@ function renderBossWarningPanel() {
     h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill mp', style: `width:${mpPct}%` }), h('div', { class: 'bar-label' }, `真力 ${c.playerMp}/${c.playerMaxMp}`)]),
     S.state.potions.some((p) => p.count > 0) ? h('p', { class: 'hint', style: 'margin-top:6px;' }, '應戰前可先在此使用藥水補血:') : null,
     h('div', {}, S.state.potions.filter((p) => p.count > 0).map((p) =>
-      h('button', { class: 'btn', onclick: () => doCombatAction('potion', { potionId: p.id }) }, `使用${p.name}(x${p.count})`)
+      h('button', { class: 'btn', onclick: () => doCombatAction('potion', { potionId: p.id }) }, `使用${potionButtonLabel(p)}`)
     )),
     h('div', { style: 'margin-top:12px;' }, [
       h('button', { class: 'btn primary', onclick: () => { S.bossEncounterAck = true; render(); } }, `應戰!`),
@@ -604,7 +610,7 @@ function renderCombatPanel() {
     // 次要操作:藥水與脫身,刻意用較不顯眼的一般按鈕樣式,跟技能欄做出區隔
     h('div', { style: 'margin-top:8px;' }, [
       ...S.state.potions.filter((p) => p.count > 0).map((p) =>
-        h('button', { class: 'btn', onclick: () => doCombatAction('potion', { potionId: p.id }) }, `使用${p.name}(x${p.count})`)
+        h('button', { class: 'btn', onclick: () => doCombatAction('potion', { potionId: p.id }) }, `使用${potionButtonLabel(p)}`)
       ),
       h('button', { class: 'btn danger', onclick: () => doCombatAction('flee') }, '脫身'),
     ]),
@@ -994,11 +1000,15 @@ function renderShop() {
 
   if (shopId === 'general' && data) {
     panel.appendChild(h('h3', {}, '藥水'));
-    panel.appendChild(h('div', { class: 'card-grid' }, data.market.potions.map((p) =>
-      h('div', { class: 'item-card' }, [
-        h('div', {}, `${p.id.includes('hp') ? '體力' : '真力'}藥水 — 售價 ${p.effectivePrice}${p.discounted ? `(特惠中,原價${p.fullPrice},特惠庫存${p.bonusStock})` : ''}`),
+    panel.appendChild(h('p', { class: 'hint' }, '藥水為全服共享庫存,庫存越低越貴、缺貨就買不到——庫存靠玩家回收雜物/素材補充(見下方回收區)。'));
+    panel.appendChild(h('div', { class: 'card-grid' }, data.market.potions.map((p) => {
+      const outOfStock = p.stock <= 0;
+      return h('div', { class: 'item-card' }, [
+        h('div', {}, `${p.name}(恢復${p.kind === 'hp' ? '氣血' : '真力'} ${Math.round(p.healPct * 100)}%上限) — 售價 ${p.price}`),
+        h('div', { class: 'hint' }, outOfStock ? '目前缺貨,請稍後再來' : `庫存 ${p.stock} 瓶`),
         h('button', {
           class: 'btn primary',
+          ...(outOfStock ? { disabled: true } : {}),
           onclick: async () => {
             try {
               const r = await api.buyPotion(p.id, 1);
@@ -1009,27 +1019,33 @@ function renderShop() {
             } catch (e) { S.error = e.message; render(); }
           },
         }, '購買 x1'),
-      ])
-    )));
+      ]);
+    })));
 
     panel.appendChild(h('h3', { style: 'margin-top:14px;' }, '強化卷軸 / 潛能方塊(用於背包/裝備欄畫面強化裝備)'));
-    panel.appendChild(h('div', { class: 'card-grid' }, S.state.consumables.map((c) =>
-      h('div', { class: 'item-card' }, [
-        h('div', {}, `${c.name} — 售價 ${c.price} 金幣(持有 ${c.count})`),
-        h('div', { class: 'hint' }, c.kind === 'scroll' ? `適用部位:${c.appliesTo === 'weapon' ? '武器' : c.appliesTo === 'armor' ? '防具' : '飾品'}` : '可用於任何裝備,洗鍊隨機百分比詞條'),
+    panel.appendChild(h('p', { class: 'hint' }, '同樣是全服共享庫存,缺貨就買不到。抉擇方塊已不開放購買,只能擊敗菁英以上的王才有機會取得(0~2個,不保底)。'));
+    panel.appendChild(h('div', { class: 'card-grid' }, data.market.enhanceItems.map((c) => {
+      const held = S.state.consumables.find((x) => x.id === c.id)?.count || 0;
+      const outOfStock = c.stock <= 0;
+      return h('div', { class: 'item-card' }, [
+        h('div', {}, `${c.name} — 售價 ${c.price} 金幣(持有 ${held})`),
+        h('div', { class: 'hint' }, c.kind === 'scroll' ? `適用部位:${c.appliesTo === 'weapon' ? '武器' : c.appliesTo === 'offhand' ? '副手' : c.appliesTo === 'armor' ? '防具' : '飾品'}` : '可用於任何裝備,洗鍊隨機百分比詞條'),
+        h('div', { class: 'hint' }, outOfStock ? '目前缺貨,請稍後再來' : `庫存 ${c.stock} 個`),
         h('button', {
           class: 'btn primary',
+          ...(outOfStock ? { disabled: true } : {}),
           onclick: async () => {
             try {
               const r = await api.buyEnhanceItem(c.id, 1);
               S.error = `購買成功,花費 ${r.cost} 金幣`;
               S.state = r.state;
+              S.shopData = await api.getShop(shopId);
               render();
             } catch (e) { S.error = e.message; render(); }
           },
         }, '購買 x1'),
-      ])
-    )));
+      ]);
+    })));
 
     panel.appendChild(h('h3', { style: 'margin-top:14px;' }, '回收雜物/素材(依全服庫存量動態計價;製作素材要留著做裝備還是賣錢由你決定)'));
     const mySellables = S.state.materials.filter((m) => ['junk', 'material', 'rare_material', 'party_material', 'set_material'].includes(m.kind));
