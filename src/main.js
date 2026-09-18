@@ -56,6 +56,7 @@ const S = {
   duelMsg: '',
   onlinePlayers: [], // 在線玩家名單(不含自己),供決鬥畫面直接點選挑戰對象,不用手動輸入帳號
   enhanceModalItemId: null, // 目前開啟強化/洗潛能彈出視窗的裝備 id,null 代表沒開啟(見 renderEnhanceModal)
+  auctionFilter: { potentialKeys: new Set(), minAtk: '', minEnhanceUses: '' }, // 交易所搜尋條件:潛能種類(複選)/攻擊或魔攻最小值/強化次數最少幾次
 };
 
 function h(tag, attrs = {}, children = []) {
@@ -1060,21 +1061,88 @@ async function openAuction() {
   render();
 }
 
+// 交易所搜尋:可篩選的潛能詞條種類(對應 enhanceEngine.js 的 POTENTIAL_LINE_POOL key,label 沿用同一份中文)
+const POTENTIAL_FILTER_OPTIONS = [
+  { key: 'atkPowerPct', label: '攻擊強度' },
+  { key: 'defPct', label: '防禦力' },
+  { key: 'hpPct', label: '氣血上限' },
+  { key: 'critRatePct', label: '會心率' },
+];
+
+// 依 S.auctionFilter 篩選交易所清單:潛能種類複選(符合勾選其中任一種即算通過)、
+// 攻擊/魔攻最小值(該裝備 atk 或 matk 其中一項達標即算通過,武器類裝備才有意義)、
+// 強化次數最少幾次(enhanceUses >= 門檻)。三個條件都留空/未勾選時視為不篩選。
+function filterAuctionListings(listings) {
+  const f = S.auctionFilter;
+  return listings.filter((l) => {
+    const item = l.item;
+    if (f.potentialKeys.size > 0) {
+      const lines = item.potential?.lines || [];
+      if (!lines.some((line) => f.potentialKeys.has(line.key))) return false;
+    }
+    if (f.minAtk !== '' && f.minAtk != null) {
+      const minAtk = Number(f.minAtk);
+      const atkVal = Math.max(item.stats?.atk || 0, item.stats?.matk || 0);
+      if (atkVal < minAtk) return false;
+    }
+    if (f.minEnhanceUses !== '' && f.minEnhanceUses != null) {
+      if ((item.enhanceUses || 0) < Number(f.minEnhanceUses)) return false;
+    }
+    return true;
+  });
+}
+
+function renderAuctionFilterPanel() {
+  const f = S.auctionFilter;
+  const applyFilter = () => {
+    f.minAtk = document.getElementById('auction-min-atk').value;
+    f.minEnhanceUses = document.getElementById('auction-min-enhance').value;
+    render();
+  };
+  return h('div', { class: 'panel' }, [
+    h('h3', {}, '搜尋條件'),
+    h('div', { class: 'hint', style: 'margin-bottom:4px;' }, '潛能詞條(複選,符合其中一種即顯示):'),
+    h('div', { style: 'display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;' }, POTENTIAL_FILTER_OPTIONS.map((opt) => {
+      const checkbox = h('input', { type: 'checkbox', onclick: (e) => { if (e.target.checked) f.potentialKeys.add(opt.key); else f.potentialKeys.delete(opt.key); render(); } });
+      if (f.potentialKeys.has(opt.key)) checkbox.checked = true; // 直接設 DOM 屬性而非傳入 attrs(避免 setAttribute('checked', null) 誤把 checkbox 弄成一律勾選)
+      return h('label', { style: 'display:flex;align-items:center;gap:4px;' }, [checkbox, opt.label]);
+    })),
+    h('div', { style: 'display:flex;flex-wrap:wrap;gap:12px;align-items:center;' }, [
+      h('label', { style: 'display:flex;align-items:center;gap:4px;' }, [
+        '攻擊力/魔攻最少:',
+        h('input', { type: 'number', id: 'auction-min-atk', value: f.minAtk, style: 'width:70px;' }),
+      ]),
+      h('label', { style: 'display:flex;align-items:center;gap:4px;' }, [
+        '強化最少次數:',
+        h('input', { type: 'number', id: 'auction-min-enhance', value: f.minEnhanceUses, style: 'width:60px;', min: '0', max: String(ENHANCE_MAX_USES) }),
+      ]),
+      h('button', { class: 'btn primary', onclick: applyFilter }, '套用搜尋'),
+      (f.potentialKeys.size > 0 || f.minAtk !== '' || f.minEnhanceUses !== '') ? h('button', {
+        class: 'btn',
+        onclick: () => { f.potentialKeys = new Set(); f.minAtk = ''; f.minEnhanceUses = ''; render(); },
+      }, '清除條件') : null,
+    ]),
+  ]);
+}
+
 function renderAuction() {
+  const filtered = filterAuctionListings(S.auctionListings);
   const panel = h('div', { class: 'panel' }, [
-    h('h3', {}, '交易所'),
+    h('h3', {}, `交易所(${filtered.length}/${S.auctionListings.length})`),
     h('p', { class: 'hint' }, '玩家互相上架/購買裝備,上架收取開價 5% 手續費,24 小時後自動下架。'),
-    h('div', { class: 'card-grid list-scroll' }, S.auctionListings.map((l) =>
-      h('div', { class: 'item-card' }, [
-        h('div', {}, `${l.item.name}(${itemTierLabel(l.item.tier)}) Lv${l.item.itemLevel} — 賣家:${l.sellerName} — 開價 ${l.price} 金幣`),
+    h('div', { class: 'card-grid list-scroll' }, filtered.map((l) =>
+      h('div', { class: `item-card rarity-${l.item.tier}` }, [
+        itemLabel(l.item),
+        potentialLine(l.item),
+        h('div', { class: 'hint', style: 'margin-top:2px;' }, `賣家:${l.sellerName} — 開價 ${l.price} 金幣`),
         l.sellerName === S.username
           ? h('button', { class: 'btn danger', onclick: async () => { try { const r = await api.cancelListing(l.id); S.state = r.state; await openAuction(); } catch (e) { S.error = e.message; render(); } } }, '取消上架')
           : h('button', { class: 'btn primary', onclick: async () => { try { const r = await api.buyListing(l.id); S.state = r.state; S.error = '購買成功!'; await openAuction(); } catch (e) { S.error = e.message; render(); } } }, '購買'),
       ])
     )),
-    S.auctionListings.length === 0 ? h('div', { class: 'hint' }, '目前沒有任何上架物品。') : null,
+    filtered.length === 0 ? h('div', { class: 'hint' }, S.auctionListings.length === 0 ? '目前沒有任何上架物品。' : '沒有符合搜尋條件的物品。') : null,
   ]);
-  mount([topBar(), errorBanner()], [panel]);
+  mount([topBar(), errorBanner()], [renderAuctionFilterPanel(), panel]);
 }
 
 // ---- 組隊副本畫面 ----
