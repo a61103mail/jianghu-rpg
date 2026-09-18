@@ -13,6 +13,16 @@ const BOSS_ENHANCE_DROPS = [
   { id: 'scroll_accessory', kind: 'scroll', chance: 0.2, min: 1, max: 1 },
   { id: 'cube_potential', kind: 'cube', chance: 0.15, min: 1, max: 1 },
 ];
+// 真王(每張地圖獨一無二的終極首領)掉落:比小王/大王更豐厚,機率與數量皆明顯提高,
+// 額外保底掉落真王結晶(trueboss_crystal,供未來更高階配方使用的終極材料)。
+const TRUEBOSS_ENHANCE_DROPS = [
+  { id: 'scroll_weapon', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
+  { id: 'scroll_armor', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
+  { id: 'scroll_offhand', kind: 'scroll', chance: 0.3, min: 1, max: 1 },
+  { id: 'scroll_accessory', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
+  { id: 'cube_potential', kind: 'cube', chance: 0.3, min: 1, max: 1 },
+];
+const TRUEBOSS_CRYSTAL_DROP = { id: 'trueboss_crystal', kind: 'trueboss_material', chance: 0.6, min: 1, max: 2 };
 
 // 小王/大王的戰鬥機制(一般小怪不套用,維持簡單):
 // - physicalResistPct / magicResistPct:對該傷害類型的抗性(正值減傷、負值代表弱點增傷),
@@ -64,6 +74,21 @@ export const MONSTERS = {
     // 組隊限定加成掉落:只有在組隊副本擊敗這隻王才有機會拿到,單人闖蕩/決鬥不會出現(見 partyEngine.js)
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
+  // 真王(每張地圖獨一無二的終極首領,強度抓在「兩張地圖之後」的量級):不是隨機遭遇,
+  // 要在地圖畫面主動點擊挑戰,全服共用重生計時(見 worldBossEngine.js),不是個人各自獨立進度。
+  ancient_treant_king: {
+    id: 'ancient_treant_king', name: '上古樹靈王', level: 22, hp: 1750, atk: 38, def: 27, critRate: 0.14, exp: 1900, tier: 'trueboss',
+    physicalResistPct: 0.2, magicResistPct: -0.15, // 巨木軀體:硬扛物理,怕火系/魔法燃燒
+    enrageHpPct: 0.3, enrageAtkMult: 1.5,
+    chargeSkill: { name: '巨木衝撞', telegraphText: '龐大的身軀開始積蓄力量,樹根深深沒入大地!', triggerEveryTurns: 3, dmgMult: 2.8 },
+    dropTable: [
+      { id: 'slime_core', kind: 'rare_material', shop: 'magic', chance: 0.9, min: 1, max: 2 },
+      { id: 'boar_fang', kind: 'rare_material', shop: 'blacksmith', chance: 0.9, min: 1, max: 2 },
+      { id: 'slime_jelly', kind: 'junk', chance: 1, min: 10, max: 16 },
+      TRUEBOSS_CRYSTAL_DROP,
+      ...TRUEBOSS_ENHANCE_DROPS,
+    ],
+  },
 
   // ---- 哥布林森林(Lv5~12) ----
   goblin: {
@@ -102,6 +127,19 @@ export const MONSTERS = {
       ...BOSS_ENHANCE_DROPS,
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
+  },
+  goblin_emperor: {
+    id: 'goblin_emperor', name: '哥布林大帝', level: 28, hp: 2500, atk: 53, def: 33, critRate: 0.18, exp: 3000, tier: 'trueboss',
+    physicalResistPct: 0.25, magicResistPct: -0.2, // 全軍統帥的重甲防護:更扛物理,魔法仍是弱點
+    enrageHpPct: 0.3, enrageAtkMult: 1.55,
+    chargeSkill: { name: '帝王審判斬', telegraphText: '高舉象徵至高權柄的巨斧,全軍為之震懾!', triggerEveryTurns: 3, dmgMult: 2.9 },
+    dropTable: [
+      { id: 'captain_insignia', kind: 'rare_material', shop: 'leather', chance: 0.9, min: 1, max: 2 },
+      { id: 'chieftain_totem', kind: 'rare_material', shop: 'magic', chance: 0.9, min: 1, max: 2 },
+      { id: 'goblin_ear', kind: 'junk', chance: 1, min: 12, max: 18 },
+      TRUEBOSS_CRYSTAL_DROP,
+      ...TRUEBOSS_ENHANCE_DROPS,
+    ],
   },
 
   // ---- 石化礦坑(Lv10~18) ----
@@ -142,6 +180,19 @@ export const MONSTERS = {
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
+  abyssal_stone_dragon: {
+    id: 'abyssal_stone_dragon', name: '深淵岩龍', level: 32, hp: 3300, atk: 67, def: 44, critRate: 0.16, exp: 4400, tier: 'trueboss',
+    physicalResistPct: 0.35, magicResistPct: -0.25, // 岩石與龍軀雙重防護:極度扛物理,但深埋礦脈的裂縫仍怕魔法貫穿
+    enrageHpPct: 0.3, enrageAtkMult: 1.6,
+    chargeSkill: { name: '深淵崩裂吐息', telegraphText: '深邃的雙眼泛起幽光,礦坑深處傳來震耳欲聾的低鳴!', triggerEveryTurns: 3, dmgMult: 3.0 },
+    dropTable: [
+      { id: 'spider_silk_gland', kind: 'rare_material', shop: 'leather', chance: 0.9, min: 1, max: 2 },
+      { id: 'golem_core', kind: 'rare_material', shop: 'blacksmith', chance: 0.9, min: 1, max: 2 },
+      { id: 'rat_tail', kind: 'junk', chance: 1, min: 14, max: 20 },
+      TRUEBOSS_CRYSTAL_DROP,
+      ...TRUEBOSS_ENHANCE_DROPS,
+    ],
+  },
 
   // ---- 幽暗沼澤(Lv16~24) ----
   swamp_tentacle: {
@@ -180,6 +231,19 @@ export const MONSTERS = {
       ...BOSS_ENHANCE_DROPS,
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
+  },
+  ancient_swamp_deity: {
+    id: 'ancient_swamp_deity', name: '太古沼澤邪神', level: 35, hp: 4200, atk: 78, def: 52, critRate: 0.2, exp: 5600, tier: 'trueboss',
+    physicalResistPct: 0.15, magicResistPct: 0.15, // 邪神體質:對兩種傷害皆有相當抗性,不再有明顯弱點屬性
+    enrageHpPct: 0.3, enrageAtkMult: 1.65,
+    chargeSkill: { name: '混沌深淵吞噬', telegraphText: '沼澤深處泛起詭異漩渦,無數黑影自水面下浮現!', triggerEveryTurns: 3, dmgMult: 3.1 },
+    dropTable: [
+      { id: 'witch_charm', kind: 'rare_material', shop: 'magic', chance: 0.9, min: 1, max: 2 },
+      { id: 'drake_scale', kind: 'rare_material', shop: 'church', chance: 0.9, min: 1, max: 2 },
+      { id: 'tentacle_ooze', kind: 'junk', chance: 1, min: 16, max: 22 },
+      TRUEBOSS_CRYSTAL_DROP,
+      ...TRUEBOSS_ENHANCE_DROPS,
+    ],
   },
 
   // ---- 遺跡邊境(Lv22~30) ----
@@ -220,47 +284,67 @@ export const MONSTERS = {
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
+  primordial_ruin_overlord: {
+    id: 'primordial_ruin_overlord', name: '太初遺跡神皇', level: 38, hp: 5600, atk: 92, def: 62, critRate: 0.22, exp: 7500, tier: 'trueboss',
+    physicalResistPct: 0.2, magicResistPct: 0.2, // 全遊戲最強的存在:對兩種傷害皆有顯著抗性,真正的終極試煉
+    enrageHpPct: 0.35, enrageAtkMult: 1.7,
+    chargeSkill: { name: '神皇終焉審判', telegraphText: '太初遺跡的碎石盡數浮起,籠罩在令人窒息的絕對威壓之下!', triggerEveryTurns: 2, dmgMult: 3.3 },
+    dropTable: [
+      { id: 'knight_emblem', kind: 'rare_material', shop: 'blacksmith', chance: 0.9, min: 1, max: 2 },
+      { id: 'king_crown_shard', kind: 'rare_material', shop: 'church', chance: 0.9, min: 1, max: 2 },
+      { id: 'shadow_fragment', kind: 'junk', chance: 1, min: 18, max: 25 },
+      { ...TRUEBOSS_CRYSTAL_DROP, chance: 0.75, min: 2, max: 3 }, // 終極真王:結晶掉落機率與數量都比其他四隻更高
+      ...TRUEBOSS_ENHANCE_DROPS,
+    ],
+  },
 };
 
 export function getMonster(id) {
   return MONSTERS[id];
 }
 
-// 地圖資料:每張地圖對應等級區間、2~5關的闖蕩旅程長度、普通怪池、專屬小王與大王(各自獨立重生計時)。
+// 地圖資料:每張地圖對應等級區間、2~5關的闖蕩旅程長度、普通怪池、專屬菁英(miniBoss/boss,原小王/大王,
+// 移除重生冷卻改為隨時可能遭遇)與真王(trueBoss,每張地圖獨一無二的終極首領,全服共用重生計時,
+// 需在地圖畫面主動點擊挑戰,見 worldBossEngine.js)。
 export const MAPS = {
   novice_plains: {
     id: 'novice_plains', name: '新手平原', levelRange: [1, 6], minStages: 2, maxStages: 3,
     monsterPool: ['slime', 'wild_boar'],
-    miniBoss: 'slime_king', miniBossRespawnMin: 5,
-    boss: 'boar_lord', bossRespawnMin: 10,
+    miniBoss: 'slime_king',
+    boss: 'boar_lord',
+    trueBoss: 'ancient_treant_king', trueBossRespawnMin: 30,
     maxEnemiesPerFight: 2,
   },
   goblin_forest: {
     id: 'goblin_forest', name: '哥布林森林', levelRange: [5, 12], minStages: 3, maxStages: 4,
     monsterPool: ['goblin', 'goblin_archer'],
-    miniBoss: 'goblin_captain', miniBossRespawnMin: 5,
-    boss: 'goblin_chieftain', bossRespawnMin: 10,
+    miniBoss: 'goblin_captain',
+    boss: 'goblin_chieftain',
+    trueBoss: 'goblin_emperor', trueBossRespawnMin: 30,
     maxEnemiesPerFight: 2,
   },
   stone_mines: {
     id: 'stone_mines', name: '石化礦坑', levelRange: [10, 18], minStages: 4, maxStages: 4,
     monsterPool: ['stone_bat', 'mine_rat'],
-    miniBoss: 'mine_spider_queen', miniBossRespawnMin: 5,
-    boss: 'stone_golem', bossRespawnMin: 10,
+    miniBoss: 'mine_spider_queen',
+    boss: 'stone_golem',
+    trueBoss: 'abyssal_stone_dragon', trueBossRespawnMin: 30,
     maxEnemiesPerFight: 3,
   },
   dark_swamp: {
     id: 'dark_swamp', name: '幽暗沼澤', levelRange: [16, 24], minStages: 4, maxStages: 5,
     monsterPool: ['swamp_tentacle', 'toxic_toad'],
-    miniBoss: 'swamp_witch', miniBossRespawnMin: 5,
-    boss: 'swamp_drake', bossRespawnMin: 10,
+    miniBoss: 'swamp_witch',
+    boss: 'swamp_drake',
+    trueBoss: 'ancient_swamp_deity', trueBossRespawnMin: 30,
     maxEnemiesPerFight: 3,
   },
   ruined_borderlands: {
     id: 'ruined_borderlands', name: '遺跡邊境', levelRange: [22, 30], minStages: 5, maxStages: 5,
     monsterPool: ['ruin_guardian', 'shadow_blade'],
-    miniBoss: 'fallen_knight', miniBossRespawnMin: 5,
-    boss: 'king_of_ruins', bossRespawnMin: 10,
+    miniBoss: 'fallen_knight',
+    boss: 'king_of_ruins',
+    trueBoss: 'primordial_ruin_overlord', trueBossRespawnMin: 30,
     maxEnemiesPerFight: 3,
   },
 };

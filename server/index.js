@@ -28,6 +28,7 @@ import {
   purgeDisconnectedMembers,
 } from './engine/partyEngine.js';
 import { challenge, getPendingChallenge, declineChallenge, acceptChallenge, findDuelByUser, duelAttack, endDuel } from './engine/duelEngine.js';
+import { initWorldBossState } from './engine/worldBossEngine.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'jianghu-dev-secret-please-change';
 // 備份急救端點的存取密碼:此 repository 是 Public(公開)的,絕對不能在程式碼裡寫死一個「預設值」
@@ -40,6 +41,7 @@ const ADMIN_BACKUP_TOKEN = process.env.ADMIN_BACKUP_TOKEN || null;
 // 把免費方案「沒有永久磁碟」的影響降到最低。ESM 支援頂層 await,故這裡直接等待完成才繼續往下執行。
 await db.initSchema();
 await importSnapshotIfEmpty();
+await initWorldBossState(); // 世界真王重生計時記憶體快取,必須在接受任何請求之前載入完成(見 worldBossEngine.js)
 
 // 最後一道防線:任何沒被個別 try/catch 接住的例外,只記錄下來、不讓整個伺服器行程崩潰。
 // (先前實際發生過:決鬥結算一個打字錯誤讓整台伺服器當機,所有人瞬間斷線——不能再讓單一錯誤波及所有玩家。)

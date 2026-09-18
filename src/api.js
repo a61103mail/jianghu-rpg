@@ -27,6 +27,7 @@ export const api = {
   rest: (goldToSpend) => request('/game/town/rest', { method: 'POST', body: JSON.stringify(goldToSpend !== undefined ? { goldToSpend } : {}) }),
   usePotion: (potionId) => request('/game/consumable/use-potion', { method: 'POST', body: JSON.stringify({ potionId }) }),
   huntStart: (mapId) => request('/game/hunt/start', { method: 'POST', body: JSON.stringify({ mapId }) }),
+  challengeTrueBoss: (mapId) => request('/game/trueboss/challenge', { method: 'POST', body: JSON.stringify({ mapId }) }),
   huntContinue: () => request('/game/hunt/continue', { method: 'POST' }),
   huntRetreat: () => request('/game/hunt/retreat', { method: 'POST' }),
   lootChoice: (itemIndex) => request('/game/hunt/loot-choice', { method: 'POST', body: JSON.stringify({ itemIndex }) }),

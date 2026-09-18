@@ -37,6 +37,10 @@ export const ITEMS = {
   // 一個人刷不到,逼玩家真的要湊隊伍打組隊副本才能取得,用來把「超稀有」裝備配方(EPIC_TIER_BOSS_MATS)
   // 從單純「刷完全部單人大王」再往上加一道「你也要真的組隊打過王」的門檻,讓組隊本身有不可取代的價值。
   party_seal: { id: 'party_seal', name: '團隊戰印', kind: 'party_material', basePrice: 150 },
+
+  // ---- 真王結晶(僅每張地圖的真王掉落,全服共用重生計時,取得難度遠高於一般小王/大王)----
+  // 供未來更高階配方使用,目前先作為真王掉落的終極獎勵材料，賣給雜貨店的價值也遠高於其他所有材料。
+  trueboss_crystal: { id: 'trueboss_crystal', name: '真王結晶', kind: 'trueboss_material', basePrice: 400 },
 };
 
 export function getItem(id) {

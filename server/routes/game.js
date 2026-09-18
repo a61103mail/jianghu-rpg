@@ -14,6 +14,7 @@ import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSna
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
 import { rollEnhance, rollCube, getEnhanceItemAppliesToSlot, ENHANCE_MAX_USES } from '../engine/enhanceEngine.js';
+import { trueBossStatusFor, isTrueBossReady, markTrueBossDefeated } from '../engine/worldBossEngine.js';
 
 const getSaveStmt = db.prepare('SELECT data FROM saves WHERE user_id = ?');
 const putSaveStmt = db.prepare('INSERT INTO saves (user_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at');
@@ -126,7 +127,7 @@ function publicState(save) {
     currentMapId: save.currentMapId,
     maps: MAP_ORDER.map((id) => {
       const m = getMap(id);
-      return { id: m.id, name: m.name, levelRange: m.levelRange, minStages: m.minStages, maxStages: m.maxStages, bossStatus: bossStatusFor(save, m) };
+      return { id: m.id, name: m.name, levelRange: m.levelRange, minStages: m.minStages, maxStages: m.maxStages, bossStatus: bossStatusFor(m) };
     }),
     skills: cls.skills,
     log: save.log.slice(0, 20),
@@ -152,51 +153,42 @@ function instantiateEnemy(monsterId) {
   };
 }
 
-// 個人進度制的小王/大王重生判定:每位玩家各地圖獨立計時,時間到才有機會純機率觸發遭遇(不是全服搶王)
-function rollBossEncounter(save, map) {
-  const now = Date.now();
-  const cd = save.bossCooldowns[map.id] || { miniBossReadyAt: 0, bossReadyAt: 0 };
-  // 注意:這裡只「判定」是否遭遇到王,不在此設定重生冷卻——冷卻要等實際打贏(擊敗)才開始計算,
-  // 否則玩家只是遇到王就選擇撤退/脫身(根本沒打贏),王卻直接進入重生倒數,等於平白消失,不合理。
-  if (now >= cd.bossReadyAt && Math.random() < 0.08) {
-    return { monsterId: map.boss, kind: 'boss' };
-  }
-  if (now >= cd.miniBossReadyAt && Math.random() < 0.16) {
-    return { monsterId: map.miniBoss, kind: 'miniboss' };
-  }
+// 菁英(原小王/大王)遭遇判定:不再有個人重生冷卻,隨時可能以固定機率遭遇,就像更強一階的小怪。
+function rollBossEncounter() {
+  if (Math.random() < 0.08) return { monsterId: null, kind: 'boss' }; // monsterId 由呼叫端依 map 帶入,這裡只決定「這次是不是遭遇到菁英」
+  if (Math.random() < 0.16) return { monsterId: null, kind: 'miniboss' };
   return null;
 }
 
-// 王被實際擊敗時才呼叫:此時才真正開始重生冷卻倒數
-function markBossDefeated(save, map, bossKind) {
-  const now = Date.now();
-  const cd = save.bossCooldowns[map.id] || { miniBossReadyAt: 0, bossReadyAt: 0 };
-  if (bossKind === 'boss') cd.bossReadyAt = now + map.bossRespawnMin * 60000;
-  else if (bossKind === 'miniboss') cd.miniBossReadyAt = now + map.miniBossRespawnMin * 60000;
-  save.bossCooldowns[map.id] = cd;
-}
-
-// 小王/大王目前是否存活(可遭遇)或還在重生倒數中,供地圖列表/旅程進度列顯示——個人進度制,每位玩家各自獨立
-function bossStatusFor(save, map) {
-  const now = Date.now();
-  const cd = save.bossCooldowns[map.id] || { miniBossReadyAt: 0, bossReadyAt: 0 };
+// 菁英狀態:恆常可遇,不再有倒數計時,供地圖列表顯示用(alive 永遠是 true,respawnInSec 永遠是 0)
+function eliteStatusFor(map) {
   const miniBoss = getMonster(map.miniBoss);
   const boss = getMonster(map.boss);
   return {
-    miniBoss: { name: miniBoss?.name, alive: now >= cd.miniBossReadyAt, respawnInSec: Math.max(0, Math.ceil((cd.miniBossReadyAt - now) / 1000)) },
-    boss: { name: boss?.name, alive: now >= cd.bossReadyAt, respawnInSec: Math.max(0, Math.ceil((cd.bossReadyAt - now) / 1000)) },
+    miniBoss: { name: miniBoss?.name, alive: true, respawnInSec: 0 },
+    boss: { name: boss?.name, alive: true, respawnInSec: 0 },
+  };
+}
+
+// 真王狀態:全服共用重生計時(見 worldBossEngine.js),不是每位玩家各自獨立進度
+function bossStatusFor(map) {
+  const trueBoss = getMonster(map.trueBoss);
+  return {
+    ...eliteStatusFor(map),
+    trueBoss: { name: trueBoss?.name, ...trueBossStatusFor(map) },
   };
 }
 
 function startCombatStage(save, map) {
-  const bossRoll = rollBossEncounter(save, map);
+  const bossRoll = rollBossEncounter();
   let enemies;
   let isBossFight = false;
   let bossKind = null;
   if (bossRoll) {
     isBossFight = true;
     bossKind = bossRoll.kind;
-    enemies = [instantiateEnemy(bossRoll.monsterId)];
+    const monsterId = bossKind === 'boss' ? map.boss : map.miniBoss;
+    enemies = [instantiateEnemy(monsterId)];
   } else {
     const count = 1 + Math.floor(Math.random() * map.maxEnemiesPerFight);
     enemies = Array.from({ length: count }, () => instantiateEnemy(map.monsterPool[Math.floor(Math.random() * map.monsterPool.length)]));
@@ -207,6 +199,7 @@ function startCombatStage(save, map) {
     mapName: map.name,
     isBossFight,
     bossKind,
+    isTrueBossFight: false, // 一般遭遇不會是真王戰,真王只能透過明確挑戰路由觸發(見 /trueboss/challenge)
     enemies,
     playerHp: save.hp,
     playerMaxHp: stats.maxHp,
@@ -214,7 +207,7 @@ function startCombatStage(save, map) {
     playerMaxMp: stats.maxMp,
     buffs: [],
     log: [
-      isBossFight ? `${bossKind === 'boss' ? '大王' : '小王'}「${enemies[0].name}」現身了!` : `遭遇了 ${enemies.map((e) => e.name).join('、')}!`,
+      isBossFight ? `菁英「${enemies[0].name}」現身了!` : `遭遇了 ${enemies.map((e) => e.name).join('、')}!`,
       levelGapDescription(save.level, enemies[0].level),
     ],
   };
@@ -480,6 +473,40 @@ export default function gameRoutes() {
     res.json({ state: publicState(save) });
   });
 
+  // 挑戰真王:明確的按鈕觸發,不是隨機遭遇——直接開一場單場戰鬥(不透過闖蕩旅程的多關卡系統),
+  // 真王是否可挑戰採全服共用計時(worldBossEngine.js),不是每個玩家各自獨立的進度。
+  router.post('/trueboss/challenge', async (req, res) => {
+    const { mapId } = req.body || {};
+    const map = getMap(mapId);
+    if (!map || !map.trueBoss) return res.status(400).json({ error: '無此地圖真王' });
+    const save = await loadSave(req.user.userId);
+    if (save.activeCombat || save.activeVenture) return res.status(400).json({ error: '請先結束目前的戰鬥或旅程' });
+    if (save.hp <= 0) return res.status(400).json({ error: '氣血已盡,請先回城鎮歇息' });
+    if (!isTrueBossReady(map.id)) return res.status(400).json({ error: '真王尚在重生中,請稍後再來挑戰' });
+    const stats = computeStats(save);
+    const enemy = instantiateEnemy(map.trueBoss);
+    save.currentMapId = map.id;
+    save.activeCombat = {
+      mapId: map.id,
+      mapName: map.name,
+      isBossFight: true,
+      bossKind: 'trueboss',
+      isTrueBossFight: true,
+      enemies: [enemy],
+      playerHp: save.hp,
+      playerMaxHp: stats.maxHp,
+      playerMp: save.mp,
+      playerMaxMp: stats.maxMp,
+      buffs: [],
+      log: [
+        `真王「${enemy.name}」現身了!這是一場硬仗,做好準備。`,
+        levelGapDescription(save.level, enemy.level),
+      ],
+    };
+    await saveGame(req.user.userId, save);
+    res.json({ state: publicState(save) });
+  });
+
   router.post('/hunt/continue', async (req, res) => {
     const save = await loadSave(req.user.userId);
     const venture = save.activeVenture;
@@ -703,9 +730,10 @@ export default function gameRoutes() {
     let combatEnded = null;
 
     if (aliveEnemies().length === 0) {
-      // 王被實際擊敗(打贏)才開始重生冷卻——遇到但脫身/撤退不算,見 rollBossEncounter 的說明
+      // 真王被實際擊敗(打贏)才觸發全服共用重生計時——遇到但脫身/撤退不算。菁英(原小王/大王)
+      // 已無冷卻機制,不需要在此標記任何東西。
       const combatMap = getMap(combat.mapId);
-      if (combat.isBossFight) markBossDefeated(save, combatMap, combat.bossKind);
+      if (combat.isTrueBossFight) await markTrueBossDefeated(combatMap.id, combatMap.trueBossRespawnMin);
       const rewardPenalty = overlevelPenaltyMultiplier(save.level, combatMap);
       let totalExp = 0;
       const drops = [];
@@ -729,11 +757,15 @@ export default function gameRoutes() {
             }
           }
         });
-        const gearChance = enemy.tier === 'boss' ? 0.35 : enemy.tier === 'miniboss' ? 0.25 : 0.12;
-        if (Math.random() < gearChance) {
-          const gear = generateCommonGear(enemy.level);
-          save.inventory.push(gear);
-          drops.push(`裝備:${gear.name}`);
+        // 真王掉落裝備的機率與次數都明顯高於菁英(原小王/大王),呼應「這隻BOSS的獎勵要豐富一點」的要求
+        const gearChance = enemy.tier === 'trueboss' ? 0.7 : enemy.tier === 'boss' ? 0.35 : enemy.tier === 'miniboss' ? 0.25 : 0.12;
+        const gearRolls = enemy.tier === 'trueboss' ? 2 : 1;
+        for (let i = 0; i < gearRolls; i += 1) {
+          if (Math.random() < gearChance) {
+            const gear = generateCommonGear(enemy.level);
+            save.inventory.push(gear);
+            drops.push(`裝備:${gear.name}`);
+          }
         }
       });
       const finalExp = Math.max(1, Math.round(totalExp * rewardPenalty));

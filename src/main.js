@@ -37,9 +37,6 @@ function formatCountdown(sec) {
   const s = sec % 60;
   return `${m}分${s}秒`;
 }
-function bossStatusText(entry) {
-  return entry.alive ? '存活(可遇)' : `重生中(還剩${formatCountdown(entry.respawnInSec)})`;
-}
 
 const S = {
   view: 'auth', // auth | chooseClass | hub | venture | inventory | shop | auction | party | duel | dead
@@ -371,22 +368,33 @@ function renderHub() {
   ]);
 
   const mapsPanel = h('div', { class: 'panel' }, [
-    h('h3', {}, '闖蕩地圖(多關卡:戰鬥/採集/奇遇交錯,各有專屬小王與大王)'),
-    h('div', { class: 'card-grid' }, s.maps.map((m) =>
-      h('div', { class: 'item-card' }, [
+    h('h3', {}, '闖蕩地圖(多關卡:戰鬥/採集/奇遇交錯,沿途可能遭遇菁英怪物;另有全服共用的真王可主動挑戰)'),
+    h('div', { class: 'card-grid' }, s.maps.map((m) => {
+      const tb = m.bossStatus.trueBoss;
+      return h('div', { class: 'item-card' }, [
         h('div', {}, `${m.name}(建議等級 Lv.${m.levelRange[0]}~${m.levelRange[1]},${m.minStages}~${m.maxStages}關)`),
-        // 小王/大王狀態併成一行(原本各佔一行)。王的名稱移到滑鼠提示(title),卡片上只留下最關鍵的
-        // 「現在能不能遇到」狀態,文字夠短才不會在較窄的卡片寬度下被迫換行、吃掉省下來的空間。
+        // 菁英(原小王/大王)已無重生冷卻,隨時可能於闖蕩途中遭遇,不再需要顯示倒數計時
         h('div', {
           class: 'hint',
-          title: `小王「${m.bossStatus.miniBoss.name}」・大王「${m.bossStatus.boss.name}」`,
-        }, `小王${bossStatusText(m.bossStatus.miniBoss)}・大王${bossStatusText(m.bossStatus.boss)}`),
+          title: `菁英「${m.bossStatus.miniBoss.name}」・「${m.bossStatus.boss.name}」隨時可能於闖蕩途中遭遇`,
+        }, '菁英怪物隨時可能於闖蕩途中遭遇'),
+        // 真王是全服共用的重生計時,不是個人進度——存活時可直接點擊挑戰,重生中顯示倒數
+        h('div', {
+          class: tb.alive ? 'hint' : 'hint',
+          title: `真王「${tb.name}」,全服玩家共用同一份重生計時`,
+        }, tb.alive ? `⚔ 真王「${tb.name}」現正可挑戰!` : `真王「${tb.name}」重生中(還剩${formatCountdown(tb.respawnInSec)})`),
         h('button', {
           class: 'btn primary',
           onclick: async () => { try { S.bossEncounterAck = false; await api.huntStart(m.id); await refreshState(); } catch (e) { S.error = e.message; render(); } },
         }, '出發闖蕩'),
-      ])
-    )),
+        tb.alive
+          ? h('button', {
+              class: 'btn danger',
+              onclick: async () => { try { S.bossEncounterAck = false; await api.challengeTrueBoss(m.id); await refreshState(); } catch (e) { S.error = e.message; render(); } },
+            }, `挑戰真王「${tb.name}」`)
+          : h('button', { class: 'btn', disabled: true }, '真王尚在重生中'),
+      ]);
+    })),
   ]);
 
   // 左欄:歇息/藥水/技能/商店(操作與資訊類、較短);右欄:地圖列表/戰果/事蹟(內容較長)——並排顯示減少整頁滾動
@@ -718,7 +726,7 @@ function renderEnhanceControls(item) {
   ]);
 }
 
-const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)', party_material: '組隊限定素材(僅組隊副本擊敗大王掉落)' };
+const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)', party_material: '組隊限定素材(僅組隊副本擊敗大王掉落)', trueboss_material: '真王結晶(僅地圖真王掉落,供頂級配方使用)' };
 
 // 背包裝備分類:依部位分組顯示(武器/防具/副手/飾品),而不是全部裝備混成一個長列表——
 // 東西一多就分不清哪些是武器哪些是飾品,分類後同類裝備放在一起,找東西不用整排掃過去。
@@ -785,7 +793,7 @@ function renderInventory() {
   }
 
   // 材料/雜物清單:先前只有雜貨店能看到「雜物」,製作素材/稀有素材完全沒地方顯示,身上到底有什麼完全看不到
-  const materialGroups = { junk: [], material: [], rare_material: [], party_material: [] };
+  const materialGroups = { junk: [], material: [], rare_material: [], party_material: [], trueboss_material: [] };
   s.materials.forEach((m) => { if (materialGroups[m.kind]) materialGroups[m.kind].push(m); });
   const materialsPanel = h('div', { class: 'panel' }, [
     h('h3', {}, '材料 / 雜物'),
