@@ -10,16 +10,19 @@ const ITEM_TIER_LABEL = { common: '普通', rare: '稀有', epic: '超稀有' };
 function itemTierLabel(tier) { return ITEM_TIER_LABEL[tier] || '普通'; }
 
 // 裝備部位/屬性代碼一律翻成中文顯示,不要讓 weapon/atk/critRatePct 這種英文代碼直接出現在畫面上
-const SLOT_LABEL_ZH = { weapon: '武器', armor: '防具', accessory1: '飾品一', accessory2: '飾品二', accessory: '飾品' };
+const SLOT_LABEL_ZH = { weapon: '武器', armor: '防具', offhand: '副手', accessory1: '飾品一', accessory2: '飾品二', accessory: '飾品' };
 function slotLabelZh(slot) { return SLOT_LABEL_ZH[slot] || slot; }
 const STAT_LABEL_ZH = {
   atk: '攻擊力', matk: '魔法攻擊力', def: '防禦力', hp: '氣血上限', mp: '真力上限',
   critRatePct: '會心率', hpRegenPct: '氣血回復', atkPowerPct: '攻擊強度%', defPct: '防禦%', hpPct: '氣血%',
   str: '力量', dex: '敏捷', int: '智力', luk: '幸運',
+  blockRatePct: '格擋率', magicDamageReductionPct: '真氣減傷%',
 };
 function statLabelZh(key) { return STAT_LABEL_ZH[key] || key; }
 function statsText(stats) {
-  return Object.entries(stats || {}).map(([k, v]) => `${statLabelZh(k)}+${v}`).join('、');
+  // 數值可能為負(強化失敗倒扣),正數才加 + 號,負數本身帶 - 號不需要額外處理,
+  // 否則會變成「格擋率+-5」這種雙重符號的畸形顯示。
+  return Object.entries(stats || {}).map(([k, v]) => `${statLabelZh(k)}${v >= 0 ? '+' : ''}${v}`).join('、');
 }
 function classNameZh(classId) {
   return S.classes.find((c) => c.id === classId)?.name || classId;
@@ -117,6 +120,9 @@ function statBlock(stats) {
     h('div', {}, [h('b', {}, '防禦 '), String(stats.def)]),
     h('div', {}, [h('b', {}, '會心 '), `${Math.round(stats.critRate * 100)}%`]),
     h('div', {}, [h('b', {}, '迴避 '), `${Math.round((stats.evasionRate || 0) * 100)}%`]),
+    // 格擋/真氣減傷互斥(戰士牧師走格擋,法師走副手真氣減傷),沒有的一方為0時不顯示,避免版面塞滿無意義的「0%」
+    stats.blockRatePct > 0 ? h('div', {}, [h('b', {}, '格擋 '), `${Math.round(stats.blockRatePct * 100)}%`]) : null,
+    stats.magicDamageReductionPct > 0 ? h('div', {}, [h('b', {}, '真氣減傷 '), `${Math.round(stats.magicDamageReductionPct * 100)}%`]) : null,
   ]);
 }
 
@@ -660,6 +666,7 @@ const ENHANCE_MAX_USES = 5;
 function slotToScrollId(slot) {
   if (slot === 'weapon') return 'scroll_weapon';
   if (slot === 'armor') return 'scroll_armor';
+  if (slot === 'offhand') return 'scroll_offhand';
   return 'scroll_accessory';
 }
 

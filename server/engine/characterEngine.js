@@ -92,6 +92,12 @@ export function computeStats(save) {
   // 全點DEX時迴避明顯優於其他職業,戰士天生DEX低、迴避明顯較弱但氣血/防禦更高——
   // 這條公式讓「弓箭手擅長閃避、戰士擅長硬扛」的職業定位自然浮現,不需要另外寫特例判斷職業。
   let evasionRate = computeEvasionRate({ dex, level: save.level });
+  // 格擋率:戰士/牧師的職業特色機制,職業基礎值(牧師較高、戰士是牧師的一半,見 classData.js)
+  // 疊加裝備(尤其是副手)提供的加成。法師/弓箭手基礎值為0,弓箭手維持迴避為主軸,
+  // 法師則改用下面的真氣減傷%(magicDamageReductionPct,完全來自副手裝備,無職業基礎值)。
+  let blockRatePct = cls.blockRatePct || 0;
+  // 真氣減傷%:法師副手專屬機制,固定生效不看機率(見 combatEngine.js rollDamage),封頂80%避免傷害完全歸零。
+  let magicDamageReductionPct = 0;
 
   // 光環(被動)技能:常駐加成,需等級達到 unlockLevel 才會生效(不是一開始就有)
   const aura = cls.skills.aura;
@@ -110,7 +116,11 @@ export function computeStats(save) {
     maxHp += bonus.hp || 0;
     maxMp += bonus.mp || 0;
     if (bonus.critRatePct) critRate += bonus.critRatePct / 100;
+    if (bonus.blockRatePct) blockRatePct += bonus.blockRatePct / 100;
+    if (bonus.magicDamageReductionPct) magicDamageReductionPct += bonus.magicDamageReductionPct / 100;
   });
+  blockRatePct = Math.max(0, Math.min(0.95, blockRatePct));
+  magicDamageReductionPct = Math.max(0, Math.min(0.8, magicDamageReductionPct));
 
   // 潛能(方塊洗出的隨機百分比詞條):加總所有已裝備物品的潛能詞條,最後以乘算方式套用在對應屬性上
   // (潛能詞條本身已是小數形式的百分比,如 0.03 代表 +3%,不需要再除以100,跟上方 item.stats.critRatePct 的「百分點」表示法不同)。
@@ -136,7 +146,7 @@ export function computeStats(save) {
 
   return {
     str, dex, int: int_, luk,
-    atk, matk, def, critRate, evasionRate,
+    atk, matk, def, critRate, evasionRate, blockRatePct, magicDamageReductionPct,
     maxHp: Math.round(maxHp), maxMp: Math.round(maxMp),
     hp: Math.round(maxHp), mp: Math.round(maxMp), // 相容別名:partyEngine/duelEngine 沿用舊欄位名稱取用「滿血滿真力」初始值
     level: save.level,

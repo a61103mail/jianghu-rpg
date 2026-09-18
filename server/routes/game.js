@@ -9,7 +9,7 @@ import { getItem, getShop, SHOP_ORDER, getRareRecipes, getPotion, POTION_ORDER, 
 import { rollMapEvent } from '../data/eventData.js';
 import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen } from '../engine/characterEngine.js';
 import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from '../engine/combatEngine.js';
-import { generateCommonGear, craftRareItem, canEquip } from '../engine/itemEngine.js';
+import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand } from '../engine/itemEngine.js';
 import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
@@ -51,6 +51,9 @@ async function loadSave(userId) {
   if (!save.allocatedStats) save.allocatedStats = { str: 0, dex: 0, int: 0, luk: 0 };
   if (save.statPoints === undefined) save.statPoints = 0;
   if (!save.currentMapId) save.currentMapId = 'novice_plains';
+  // 舊存檔的 equipment 物件是在新增副手部位之前建立的,根本沒有 offhand 這個鍵——
+  // 不補上的話 Object.entries(save.equipment) 不會列出它,前端裝備欄畫面就看不到「副手」這一格。
+  GEAR_SLOTS.forEach((slot) => { if (!(slot in save.equipment)) save.equipment[slot] = null; });
 
   // 舊存檔的裝備物件可能沒有 enhanceLevel/potential/rollQuality/enhanceUses 欄位(陸續新增的系統),在此補上預設值。
   // enhanceUses(新制的「已使用次數」計數)舊裝備一律視為 0——等同重新獲得滿額 5 次強化機會,
@@ -393,6 +396,11 @@ export default function gameRoutes() {
     const save = await loadSave(req.user.userId);
     save.classId = classId;
     save.classChosen = true;
+    // 法師沒有格擋機制,改靠副手的真氣減傷%生存——選職業當下直接送一把基礎副手,
+    // 不必等存夠錢打造才有防禦手段(呼應「法師要給一個基礎的副手」)。
+    if (classId === 'mage' && !save.equipment.offhand) {
+      save.equipment.offhand = createStarterMageOffhand();
+    }
     const stats = computeStats(save);
     save.hp = stats.maxHp;
     save.mp = stats.maxMp;
@@ -662,7 +670,7 @@ export default function gameRoutes() {
           }
         }
 
-        const { amount, isCrit, missed } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: stats.def, critRate: enemy.critRate, evasionPct: stats.evasionRate });
+        const { amount, isCrit, missed, blocked } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: stats.def, critRate: enemy.critRate, evasionPct: stats.evasionRate, blockRatePct: stats.blockRatePct, magicDamageReductionPct: stats.magicDamageReductionPct });
         if (missed) {
           lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', missed: true }));
           return;
@@ -674,7 +682,7 @@ export default function gameRoutes() {
         if (isChargeRelease) {
           lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${defending ? '(防禦大幅減輕了衝擊)' : ''}。`);
         } else {
-          lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', amount: finalAmount, isCrit }) + (defending ? '(防禦減傷)' : ''));
+          lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', amount: finalAmount, isCrit, blocked }) + (defending ? '(防禦減傷)' : ''));
         }
       });
       combat.buffs = tickBuffs(combat.buffs);

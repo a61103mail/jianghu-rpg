@@ -301,7 +301,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
       }
     }
 
-    const { amount, isCrit, missed } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: target.stats.def, critRate: enemy.critRate, evasionPct: target.stats.evasionRate });
+    const { amount, isCrit, missed, blocked } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: target.stats.def, critRate: enemy.critRate, evasionPct: target.stats.evasionRate, blockRatePct: target.stats.blockRatePct, magicDamageReductionPct: target.stats.magicDamageReductionPct });
     if (missed) {
       lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, missed: true }));
       return;
@@ -315,7 +315,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
     if (isChargeRelease) {
       lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!對${target.username}造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${isDefendingTarget ? '(防禦大幅減輕了衝擊)' : ''}。`);
     } else {
-      lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, amount: finalAmount, isCrit }) + (isDefendingTarget ? '(防禦減傷)' : ''));
+      lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, amount: finalAmount, isCrit, blocked }) + (isDefendingTarget ? '(防禦減傷)' : ''));
     }
   });
 

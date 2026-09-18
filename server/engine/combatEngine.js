@@ -50,31 +50,47 @@ function pick(arr) {
 // 依「等級線性基礎值 + 攻擊力*固定係數」計算單次攻擊傷害(coeff 預設 1,代表一般攻擊/敵方普攻;
 // 技能傷害則傳入該技能固定的 coeff)。level 為攻擊方等級,def 為受擊方防禦。
 // resistPct:受擊方對此傷害類型(物理/魔法)的抗性,正值減傷、負值(弱點)增傷,套用在防禦力扣減之前。
-// evasionPct:受擊方的迴避率,命中判定優先於一切傷害計算——迴避成功則直接 missed:true、無傷害。
-export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0, evasionPct = 0 }) {
-  if (Math.random() < evasionPct) {
-    return { amount: 0, isCrit: false, missed: true };
+//
+// 判定順序:格擋 > 迴避 > 才判定是否被擊中。先擲格擋(戰士/牧師的職業特色機制)——
+// 觸發的話這次攻擊直接定性為「命中但減傷」,不再進行迴避判定;只有格擋沒觸發,
+// 才進一步擲迴避,迴避成功則直接 missed:true、完全無傷害;兩者都沒發生,才是「正常被擊中」。
+// magicDamageReductionPct:受擊方的真氣減傷%(法師副手專屬機制),固定生效不用擲機率,
+// 每次命中都按此比例直接減傷——跟格擋「機率觸發、觸發後打對折」不同,是「必定生效、按比例减免」。
+// 兩者互斥:法師不會同時擁有格擋值,魔法減傷優先於格擋判定。
+export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0, evasionPct = 0, blockRatePct = 0, magicDamageReductionPct = 0 }) {
+  let blocked = false;
+  if (blockRatePct > 0 && Math.random() < blockRatePct) {
+    blocked = true;
+  } else if (Math.random() < evasionPct) {
+    return { amount: 0, isCrit: false, missed: true, blocked: false };
   }
   const isCrit = Math.random() < critRate;
   const levelBase = LEVEL_BASE_COEF * level;
   const raw = (levelBase + atk * coeff) * (1 - resistPct);
   const varied = raw * (0.85 + Math.random() * 0.3);
-  const mitigated = Math.max(1, Math.round(varied - def * 0.5));
+  let mitigated = Math.max(1, Math.round(varied - def * 0.5));
+  if (magicDamageReductionPct > 0) {
+    mitigated = Math.max(1, Math.round(mitigated * (1 - magicDamageReductionPct)));
+  } else if (blocked) {
+    mitigated = Math.max(1, Math.round(mitigated * 0.5));
+  }
   const amount = isCrit ? Math.round(mitigated * 1.6) : mitigated;
-  return { amount: Math.max(1, amount), isCrit, missed: false };
+  return { amount: Math.max(1, amount), isCrit, missed: false, blocked };
 }
 
-export function narrateAttack({ attackerName, defenderName, amount, isCrit, missed }) {
+export function narrateAttack({ attackerName, defenderName, amount, isCrit, missed, blocked }) {
   const verb = pick(ATTACK_VERBS);
   if (missed) return `${attackerName}${verb},${defenderName}${pick(MISS_PHRASES)}。`;
   const phrase = isCrit ? pick(CRIT_PHRASES) : pick(NORMAL_PHRASES);
-  return `${attackerName}${verb},${defenderName}${phrase},造成 ${amount} 點傷害${isCrit ? '(會心一擊!)' : ''}。`;
+  const blockedText = blocked ? '(格擋!傷害減半)' : '';
+  return `${attackerName}${verb},${defenderName}${phrase},造成 ${amount} 點傷害${isCrit ? '(會心一擊!)' : ''}${blockedText}。`;
 }
 
-export function narrateEnemyAttack({ enemyName, targetName, amount, isCrit, missed }) {
+export function narrateEnemyAttack({ enemyName, targetName, amount, isCrit, missed, blocked }) {
   const verb = pick(ENEMY_TURN_VERBS);
   if (missed) return `${enemyName}${verb},${targetName}${pick(MISS_PHRASES)}。`;
-  return `${enemyName}${verb},${targetName}${isCrit ? '猝不及防,傷勢不輕' : '硬接下來'},損失 ${amount} 點氣血${isCrit ? '(要害!)' : ''}。`;
+  const blockedText = blocked ? '(格擋!傷害減半)' : '';
+  return `${enemyName}${verb},${targetName}${isCrit ? '猝不及防,傷勢不輕' : '硬接下來'},損失 ${amount} 點氣血${isCrit ? '(要害!)' : ''}${blockedText}。`;
 }
 
 export function levelGapDescription(playerLevel, enemyLevel) {

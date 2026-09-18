@@ -1,5 +1,5 @@
 // 裝備生成引擎:普通裝備(monster drop)vs稀有裝備(shop craft only),兩軌互不重疊。
-import { GEAR_SLOTS, WEAPON_TYPE_BY_CLASS, ARMOR_NAMES, ACCESSORY_NAMES } from '../data/itemData.js';
+import { GEAR_SLOTS, WEAPON_TYPE_BY_CLASS, OFFHAND_TYPE_BY_CLASS, ARMOR_NAMES, ACCESSORY_NAMES } from '../data/itemData.js';
 
 let counter = 1;
 function nextId() {
@@ -40,6 +40,26 @@ function commonArmorStat(level) {
   const hpRoll = rollStatWithVariance(8 + level * 2.5);
   return { stats: { def: defRoll.value, hp: hpRoll.value }, quality: averageQuality([defRoll, hpRoll]) };
 }
+// 副手是唯一跟武器一樣「依職業鎖定」的普通掉落部位(不像防具/飾品任何職業通用)——
+// 法師的副手給真氣減傷%(magicDamageReductionPct,固定生效減傷,取代格擋),其餘職業給格擋率(blockRatePct)
+// + 生存數值(氣血/防禦)+ 少量攻擊值,呼應「副手主要是生存用的素質跟一些攻擊值」。
+function commonOffhandStat(level, classId, atkKey) {
+  const hpRoll = rollStatWithVariance(4 + level * 1.2);
+  const atkRoll = rollStatWithVariance(1 + level * 0.35);
+  if (classId === 'mage') {
+    const reductionRoll = rollDecimalStatWithVariance(18 + level * 0.9); // 普通掉落上限抓在略低於商店common(50%),避免打怪就直接接近封頂
+    return {
+      stats: { hp: hpRoll.value, [atkKey]: atkRoll.value, magicDamageReductionPct: reductionRoll.value },
+      quality: averageQuality([hpRoll, atkRoll, reductionRoll]),
+    };
+  }
+  const defRoll = rollStatWithVariance(1 + level * 0.4);
+  const blockRoll = rollDecimalStatWithVariance(0.8 + level * 0.1);
+  return {
+    stats: { hp: hpRoll.value, def: defRoll.value, [atkKey]: atkRoll.value, blockRatePct: blockRoll.value },
+    quality: averageQuality([hpRoll, defRoll, atkRoll, blockRoll]),
+  };
+}
 // 飾品是職業無關的通用格,三選一:會心率、氣血,或直接給DEX原生屬性(讓迴避build能透過裝備進一步強化,
 // DEX同時也會回饋到攻擊/防禦/會心,對任何職業來說都不是死詞條)。
 function commonAccessoryStat(level) {
@@ -65,14 +85,14 @@ function durabilityFieldsFor(slot) {
   return { durability: MAX_DURABILITY, maxDurability: MAX_DURABILITY };
 }
 
-// 普通裝備:打怪掉落時依怪物等級隨機生成(武器會限定職業類型,防具/飾品任何職業皆可用)。
+// 普通裝備:打怪掉落時依怪物等級隨機生成(武器/副手會限定職業類型,防具/飾品任何職業皆可用)。
 // 飾品掉落時只標記為通用的「accessory」,不預先綁定飾品一/飾品二——
 // 曾經用隨機直接指定 accessory1/accessory2,結果玩家可能連續好幾次都抽到同一格,
 // 導致另一格「看起來」永遠裝不上東西(其實只是運氣差,飾品一直接沒抽到而已)。
 // 現在改成裝備當下由玩家自己選要放哪一格,兩格才會真正平等好用。
 export function generateCommonGear(monsterLevel) {
   const roll = Math.random();
-  const slot = roll < 0.25 ? 'weapon' : roll < 0.5 ? 'armor' : 'accessory';
+  const slot = roll < 0.2 ? 'weapon' : roll < 0.4 ? 'armor' : roll < 0.6 ? 'offhand' : 'accessory';
   let name;
   let result;
   let classType = null;
@@ -86,6 +106,13 @@ export function generateCommonGear(monsterLevel) {
   } else if (slot === 'armor') {
     name = ARMOR_NAMES[Math.floor(Math.random() * ARMOR_NAMES.length)];
     result = commonArmorStat(monsterLevel);
+  } else if (slot === 'offhand') {
+    const classKeys = Object.keys(OFFHAND_TYPE_BY_CLASS);
+    const cls = classKeys[Math.floor(Math.random() * classKeys.length)];
+    const info = OFFHAND_TYPE_BY_CLASS[cls];
+    classType = cls;
+    name = info.names[Math.floor(Math.random() * info.names.length)];
+    result = commonOffhandStat(monsterLevel, cls, WEAPON_TYPE_BY_CLASS[cls].atkKey);
   } else {
     name = ACCESSORY_NAMES[Math.floor(Math.random() * ACCESSORY_NAMES.length)];
     result = commonAccessoryStat(monsterLevel);
@@ -124,6 +151,25 @@ export function craftRareItem(shopId, recipe) {
 // 裝備對角色的屬性加成(此版本裝備資料直接就是最終數值,不像先前武俠版本有潛力/淬煉/打造疊加)
 export function getItemTotalStats(item) {
   return item.stats || {};
+}
+
+// 法師選擇職業時免費贈送的基礎副手:固定 50% 真氣減傷(對應 common 階магic副手同等級數值),
+// 讓法師從 1 級開始就有「用副手抵擋傷害」的防禦手段,不必等到存夠錢打造才有生存工具。
+export function createStarterMageOffhand() {
+  return {
+    id: nextId(),
+    slot: 'offhand',
+    name: '學徒秘紋法印',
+    tier: 'common',
+    classType: 'mage',
+    itemLevel: 1,
+    stats: { hp: 20, matk: 5, magicDamageReductionPct: 50 },
+    rollQuality: 0.5,
+    enhanceLevel: 0,
+    enhanceUses: 0,
+    potential: null,
+    ...durabilityFieldsFor('offhand'),
+  };
 }
 
 // 是否可裝備:武器一律看 classType;防具/飾品的普通掉落 classType 為 null(任何職業皆可用),

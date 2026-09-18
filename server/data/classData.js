@@ -18,6 +18,7 @@ export const CLASSES = {
     baseMp: 20,
     hpPerLevel: 14,
     mpPerLevel: 2,
+    blockRatePct: 0.08, // 格擋基礎值:戰士是牧師的一半(近戰肉身格擋,靠裝備/副手再往上疊加)
     skills: {
       basic: { id: 'w_slash', name: '猛力斬', type: 'single', unlockLevel: 1, mpCost: 0, coeff: 1.3, desc: '掄起兵器全力一斬,對單一敵人造成傷害。' },
       aoe: { id: 'w_whirl', name: '旋風斬', type: 'aoe', unlockLevel: 8, mpCost: 8, coeff: 0.8, desc: '橫掃全場,對所有敵人造成傷害。' },
@@ -38,6 +39,7 @@ export const CLASSES = {
     baseMp: 50,
     hpPerLevel: 8,
     mpPerLevel: 6,
+    blockRatePct: 0, // 法師不走格擋路線,防禦手段是副手提供的真氣減傷%(magicDamageReductionPct)
     skills: {
       basic: { id: 'm_bolt', name: '火焰彈', type: 'single', unlockLevel: 1, mpCost: 4, coeff: 1.4, desc: '射出一枚火焰彈,對單一敵人造成傷害。' },
       aoe: { id: 'm_burst', name: '烈焰爆', type: 'aoe', unlockLevel: 8, mpCost: 10, coeff: 0.9, desc: '引爆烈焰,對所有敵人造成傷害。' },
@@ -58,6 +60,7 @@ export const CLASSES = {
     baseMp: 45,
     hpPerLevel: 10,
     mpPerLevel: 5,
+    blockRatePct: 0.16, // 格擋基礎值:牧師是四職業中最高的(聖光護體),戰士是牧師的一半
     skills: {
       basic: { id: 'p_smite', name: '聖光箭', type: 'single', unlockLevel: 1, mpCost: 4, coeff: 1.15, desc: '聖光凝聚成箭,對單一敵人造成傷害。' },
       aoe: { id: 'p_wave', name: '神聖震擊', type: 'aoe', unlockLevel: 8, mpCost: 10, coeff: 0.7, desc: '聖光震盪四方,對所有敵人造成傷害。' },
@@ -78,6 +81,7 @@ export const CLASSES = {
     baseMp: 30,
     hpPerLevel: 10,
     mpPerLevel: 4,
+    blockRatePct: 0, // 弓箭手的防禦主軸維持迴避率(DEX天生高),不給格擋基礎值
     skills: {
       basic: { id: 'a_shot', name: '疾風箭', type: 'single', unlockLevel: 1, mpCost: 3, coeff: 1.35, desc: '快速射出一箭,對單一敵人造成傷害。' },
       aoe: { id: 'a_rain', name: '亂箭齊發', type: 'aoe', unlockLevel: 8, mpCost: 9, coeff: 0.85, desc: '箭如雨下,對所有敵人造成傷害。' },

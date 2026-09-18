@@ -43,7 +43,7 @@ export function getItem(id) {
   return ITEMS[id];
 }
 
-export const GEAR_SLOTS = ['weapon', 'armor', 'accessory1', 'accessory2'];
+export const GEAR_SLOTS = ['weapon', 'armor', 'offhand', 'accessory1', 'accessory2'];
 
 // 各職業使用的武器類型(決定普通裝備隨機掉落時的命名與對應稀有製作商店)
 export const WEAPON_TYPE_BY_CLASS = {
@@ -51,6 +51,16 @@ export const WEAPON_TYPE_BY_CLASS = {
   mage: { type: 'staff', names: ['木杖', '法杖', '魔導書'], shop: 'magic', atkKey: 'matk' },
   priest: { type: 'mace', names: ['聖錘', '聖典', '牧杖'], shop: 'church', atkKey: 'matk' },
   archer: { type: 'bow', names: ['短弓', '長弓', '弩'], shop: 'leather', atkKey: 'atk' },
+};
+
+// 副手裝備(新增部位):主要提供生存數值(氣血/防禦)+ 少量攻擊值,武器一樣依職業鎖定。
+// 法師的副手是特例——額外附帶「真氣減傷%」(magicDamageReductionPct,固定生效的傷害減免,
+// 見 combatEngine.js),取代其他職業靠格擋值(blockRatePct)生存的機制。
+export const OFFHAND_TYPE_BY_CLASS = {
+  warrior: { names: ['小圓盾', '鳶盾', '塔盾'], shop: 'blacksmith' },
+  mage: { names: ['魔導書副冊', '秘紋法印', '奧術聖典'], shop: 'magic' },
+  priest: { names: ['聖徽副手', '聖光聖典', '天啟聖書'], shop: 'church' },
+  archer: { names: ['箭袋', '強化弓弦', '獵人護臂'], shop: 'leather' },
 };
 
 export const ARMOR_NAMES = ['布甲', '皮甲', '鎖甲', '板甲'];
@@ -76,21 +86,36 @@ const TIER_STATS = {
   rare: { weaponAtk: 31, armorDef: 22, armorHp: 73, accCritPct: 4.4, accHp: 44, accDex: 22 },
   epic: { weaponAtk: 47, armorDef: 34, armorHp: 109, accCritPct: 6.6, accHp: 66, accDex: 34 },
 };
+// 副手三階數值:生存向(氣血/防禦約為防具一半)+ 少量攻擊值(約武器三分之一)。
+// 非法師職業的 blockPct 是格擋率百分點加成;法師改用 magicReductionPct(真氣減傷%,固定生效)——
+// 起始贈送的基礎副手直接對應 common 階(50%減傷),打造更高階可推進到 rare 65%/epic 80%(封頂)。
+const OFFHAND_TIER_STATS = {
+  common: { hp: 23, def: 7, atk: 7, blockPct: 3, magicReductionPct: 50 },
+  rare: { hp: 37, def: 11, atk: 10, blockPct: 5, magicReductionPct: 65 },
+  epic: { hp: 55, def: 17, atk: 16, blockPct: 7, magicReductionPct: 80 },
+};
 const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有' };
 
-// 依商店的攻擊屬性(atk/matk)與部位,組出四個部位×三階層共 15 張配方(武器/防具各1張+飾品3張)。
-// 飾品的三張配方(acc1會心向/acc2氣血向/acc3敏捷向)只是「三種不同屬性傾向的飾品」,不代表三個不同格子——
+// 依商店的攻擊屬性(atk/matk)與部位,組出五個部位×三階層共 15 張配方(武器/防具/副手各1張+飾品2張)。
+// 飾品的兩張配方(acc1會心向/acc2氣血向)只是「不同屬性傾向的飾品」,不代表兩個不同格子——
 // slot 統一用通用的 accessory,實際要放飾品一或飾品二由玩家裝備時自己選。
-// acc3(DEX)讓玩家能主動往「迴避build」itemize,不限定弓箭手,任何職業都能選擇這條路線。
-function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold) {
+function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold, offhandNames) {
   const recipes = [];
+  const isMage = shopId === 'magic';
   ['common', 'rare', 'epic'].forEach((tier) => {
     const s = TIER_STATS[tier];
+    const o = OFFHAND_TIER_STATS[tier];
     const n = names[tier];
     const materials = tierMaterials[tier];
     const gold = tierGold[tier];
     recipes.push({ id: `${shopId}_weapon_${tier}`, name: n.weapon, slot: 'weapon', tier, gold, materials, statBonus: { [atkKey]: s.weaponAtk } });
     recipes.push({ id: `${shopId}_armor_${tier}`, name: n.armor, slot: 'armor', tier, gold, materials, statBonus: { def: s.armorDef, hp: s.armorHp } });
+    recipes.push({
+      id: `${shopId}_offhand_${tier}`, name: offhandNames[tier], slot: 'offhand', tier, gold, materials,
+      statBonus: isMage
+        ? { hp: o.hp, [atkKey]: o.atk, magicDamageReductionPct: o.magicReductionPct }
+        : { hp: o.hp, def: o.def, [atkKey]: o.atk, blockRatePct: o.blockPct },
+    });
     recipes.push({ id: `${shopId}_accessory1_${tier}`, name: n.acc1, slot: 'accessory', tier, gold, materials, statBonus: { critRatePct: s.accCritPct } });
     recipes.push({ id: `${shopId}_accessory2_${tier}`, name: n.acc2, slot: 'accessory', tier, gold, materials, statBonus: { hp: s.accHp } });
     recipes.push({ id: `${shopId}_accessory3_${tier}`, name: n.acc3, slot: 'accessory', tier, gold, materials, statBonus: { dex: s.accDex } });
@@ -111,7 +136,8 @@ export const RARE_RECIPES = {
       rare: { ...RARE_TIER_BOSS_MATS, iron_ore: 6 },
       epic: { ...EPIC_TIER_BOSS_MATS, iron_ore: 12 },
     },
-    { common: 25, rare: 150, epic: 700 }
+    { common: 25, rare: 150, epic: 700 },
+    { common: '精鐵小圓盾', rare: '鋼骨鳶盾', epic: '巨人斷魂塔盾' }
   ),
   leather: buildShopRecipes(
     'leather', 'atk',
@@ -125,7 +151,8 @@ export const RARE_RECIPES = {
       rare: { ...RARE_TIER_BOSS_MATS, rough_leather: 4, feather: 3 },
       epic: { ...EPIC_TIER_BOSS_MATS, rough_leather: 8, feather: 6 },
     },
-    { common: 25, rare: 150, epic: 700 }
+    { common: 25, rare: 150, epic: 700 },
+    { common: '硬化箭袋', rare: '隊長強化弓弦', epic: '蛛絲獵人護臂' }
   ),
   magic: buildShopRecipes(
     'magic', 'matk',
@@ -139,7 +166,8 @@ export const RARE_RECIPES = {
       rare: { ...RARE_TIER_BOSS_MATS, crystal_shard: 6 },
       epic: { ...EPIC_TIER_BOSS_MATS, crystal_shard: 12 },
     },
-    { common: 25, rare: 150, epic: 700 }
+    { common: 25, rare: 150, epic: 700 },
+    { common: '魔導書副冊', rare: '史萊姆秘紋法印', epic: '女巫奧術聖典' }
   ),
   church: buildShopRecipes(
     'church', 'matk',
@@ -153,7 +181,8 @@ export const RARE_RECIPES = {
       rare: { ...RARE_TIER_BOSS_MATS, holy_water: 8 },
       epic: { ...EPIC_TIER_BOSS_MATS, holy_water: 12 },
     },
-    { common: 25, rare: 150, epic: 700 }
+    { common: 25, rare: 150, epic: 700 },
+    { common: '聖水聖徽副手', rare: '聖水聖光聖典', epic: '龍鱗天啟聖書' }
   ),
 };
 
@@ -180,15 +209,16 @@ export function getPotion(id) {
 }
 
 // 裝備強化用消耗品:雜貨店固定金幣購買,套用於 enhanceEngine.js。
-// 卷軸:依部位分三種(武器/防具/飾品),強化成功會 +1 強化等級並增加固定數值,失敗只損失卷軸本身(不會破壞裝備)。
+// 卷軸:依部位分四種(武器/防具/副手/飾品),強化成功會 +1 強化等級並增加固定數值,失敗只損失卷軸本身(不會破壞裝備)。
 // 方塊:洗裝備的「潛能」(隨機百分比詞條),不分部位、任何裝備都能用,見 enhanceEngine.js 的機率與詞條池。
 export const ENHANCE_ITEMS = {
   scroll_weapon: { id: 'scroll_weapon', name: '武器強化卷軸', kind: 'scroll', appliesTo: 'weapon', price: 60 },
   scroll_armor: { id: 'scroll_armor', name: '防具強化卷軸', kind: 'scroll', appliesTo: 'armor', price: 60 },
+  scroll_offhand: { id: 'scroll_offhand', name: '副手強化卷軸', kind: 'scroll', appliesTo: 'offhand', price: 60 },
   scroll_accessory: { id: 'scroll_accessory', name: '飾品強化卷軸', kind: 'scroll', appliesTo: 'accessory', price: 60 },
   cube_potential: { id: 'cube_potential', name: '潛能方塊', kind: 'cube', appliesTo: 'any', price: 150 },
 };
-export const ENHANCE_ITEM_ORDER = ['scroll_weapon', 'scroll_armor', 'scroll_accessory', 'cube_potential'];
+export const ENHANCE_ITEM_ORDER = ['scroll_weapon', 'scroll_armor', 'scroll_offhand', 'scroll_accessory', 'cube_potential'];
 
 export function getEnhanceItem(id) {
   return ENHANCE_ITEMS[id];
