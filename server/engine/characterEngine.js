@@ -3,7 +3,7 @@ import { getClass, expForNextLevel, STAT_POINTS_PER_LEVEL, MAX_LEVEL } from '../
 import { GEAR_SLOTS } from '../data/itemData.js';
 import { getItemTotalStats } from './itemEngine.js';
 import { computeEvasionRate } from './combatEngine.js';
-import { getSetInfo, CLASS_SPECIAL_STAT_KEY } from '../data/setGearData.js';
+import { getSetInfo, CLASS_SPECIAL_STAT_KEY, describeSetTiers } from '../data/setGearData.js';
 
 export const HP_REGEN_PCT_PER_MINUTE = 0.04; // 氣血自然恢復:每分鐘回復上限的 4%(離線也會累積),城鎮/藥水才是主要恢復手段
 export const MP_REGEN_PCT_PER_MINUTE = 0.06; // 真力自然恢復略快於氣血
@@ -86,18 +86,20 @@ function computeSetBonuses(save) {
 }
 
 // 供前端顯示「目前穿著套裝進度」:只列出玩家目前至少穿1件的套裝,附總部位數/已穿件數/
-// 完整效果定義(每個門檻是否已解鎖),玩家不用自己心算就能看出套裝效果觸發到哪裡(見套裝效果 Modal)。
+// 完整效果定義(每個門檻是否已解鎖,text 是已代入職業特色的中文描述),玩家不用自己心算
+// 就能看出套裝效果觸發到哪裡(見套裝效果 Modal)。
 export function getEquippedSetProgress(save) {
   const setCounts = countEquippedSets(save);
   return Object.entries(setCounts).map(([setId, count]) => {
     const info = getSetInfo(setId);
     if (!info) return null;
+    const descriptions = describeSetTiers(info.tiers, save.classId);
     return {
       setId,
       name: info.name,
       pieces: info.pieces,
       equippedCount: count,
-      tiers: info.tiers.map((t) => ({ ...t, unlocked: count >= t.count })),
+      tiers: info.tiers.map((t, i) => ({ ...t, text: descriptions[i].text, unlocked: count >= t.count })),
     };
   }).filter(Boolean);
 }

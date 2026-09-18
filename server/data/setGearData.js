@@ -134,6 +134,25 @@ export function getSetInfo(setId) {
   return SET_INFO[setId];
 }
 
+// 套裝效果 tier 的中文標籤(不含 classSpecialPct,那個要依職業決定,見 describeSetTiers)
+const SET_TIER_LABEL = {
+  atkPowerPct: '攻擊強度',
+  allRawStatsPct: '全屬性(力量/敏捷/智力/幸運)',
+  allStatsExceptSpecialPct: '全部能力(終極效果)',
+};
+
+// 把套裝 tiers 轉成「已代入職業特色標籤」的完整中文描述,供商店配方卡片與裝備欄套裝進度顯示共用,
+// 前端不用自己重複維護一份 key→中文的對照表。classId 未提供(如通用防具/飾品配方,不特定職業)時,
+// 職業特色欄位改用泛稱「職業特色屬性」。
+export function describeSetTiers(tiers, classId) {
+  const specialLabel = classId ? CLASS_SPECIAL_STAT_LABEL[classId] : '職業特色屬性';
+  return tiers.map((t) => ({
+    count: t.count,
+    text: `${t.key === 'classSpecialPct' ? specialLabel : SET_TIER_LABEL[t.key]} +${t.value}%`,
+  }));
+}
+
+
 // ---- 套裝製作配方(商店用材料+金幣製作,取代直接掉落成品)----
 // 材料保底掉落(見 monsterData.js 的 eliteShardDrop/trueBossCrystalDrop),玩家帶去對應商店製作。
 // 武器/副手依職業限定,只出現在該職業對應的商店;防具/飾品職業通用——防具在四間職業商店都能做

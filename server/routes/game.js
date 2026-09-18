@@ -7,10 +7,10 @@ import { CLASSES, CLASS_ORDER, getClass, STAT_POINTS_PER_LEVEL, expForNextLevel,
 import { getMap, getMonster, MAP_ORDER } from '../data/monsterData.js';
 import { getItem, getShop, SHOP_ORDER, getRareRecipes, getPotion, POTION_ORDER, getTierNameZh, GEAR_SLOTS, getEnhanceItem, ENHANCE_ITEM_ORDER } from '../data/itemData.js';
 import { rollMapEvent } from '../data/eventData.js';
-import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen } from '../engine/characterEngine.js';
+import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen, getEquippedSetProgress } from '../engine/characterEngine.js';
 import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from '../engine/combatEngine.js';
 import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand, craftSetItem } from '../engine/itemEngine.js';
-import { getSetInfo, getSetRecipesForShop, getSetRecipeById } from '../data/setGearData.js';
+import { getSetInfo, getSetRecipesForShop, getSetRecipeById, describeSetTiers } from '../data/setGearData.js';
 import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot, buyEnhanceItemFromMarket } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
@@ -122,6 +122,7 @@ function publicState(save) {
     gold: save.gold,
     equipment: save.equipment,
     inventory: save.inventory,
+    setProgress: getEquippedSetProgress(save), // 目前穿著中的套裝進度(幾件/解鎖了什麼效果),供裝備欄套裝效果 Modal 顯示
     materials: Object.entries(save.materials).filter(([, c]) => c > 0).map(([id, count]) => ({ id, name: getItem(id)?.name || id, kind: getItem(id)?.kind, count })),
     potions: POTION_ORDER.map((id) => ({ id, name: getPotion(id).name, kind: getPotion(id).kind, healPct: getPotion(id).healPct, count: save.potions[id] || 0 })),
     consumables: ENHANCE_ITEM_ORDER.map((id) => ({ id, name: getEnhanceItem(id).name, kind: getEnhanceItem(id).kind, appliesTo: getEnhanceItem(id).appliesTo, price: getEnhanceItem(id).price, count: save.consumables[id] || 0 })),
@@ -875,16 +876,24 @@ export default function gameRoutes() {
     const save = await loadSave(req.user.userId);
     // 套裝配方(菁英/真王):武器/副手依職業限定,只給玩家看得到自己能用的版本(防具/飾品職業通用,
     // classType 為 null 一律保留)。材料需求同樣補上中文名稱+目前持有量,跟一般配方格式一致。
+    // setTierDescriptions:完整套裝效果說明(集滿幾件解鎖什麼),讓玩家在商店就能看到「值不值得湊」,
+    // 不用等做完裝備穿上去才知道效果是什麼——武器/副手已有 classType 就直接代入,防具/飾品(無
+    // classType)一律代入玩家自己的職業,方便玩家一眼看懂「穿上我這個職業會拿到什麼」。
     const setRecipes = getSetRecipesForShop(shop.id)
       .filter((r) => !r.classType || r.classType === save.classId)
-      .map((r) => ({
-        ...r,
-        tierLabel: getTierNameZh(r.tier),
-        setName: getSetInfo(r.setId)?.name,
-        materialsDetail: Object.entries(r.materials).map(([matId, need]) => ({
-          id: matId, name: getItem(matId)?.name || matId, need, have: save.materials[matId] || 0,
-        })),
-      }));
+      .map((r) => {
+        const info = getSetInfo(r.setId);
+        return {
+          ...r,
+          tierLabel: getTierNameZh(r.tier),
+          setName: info?.name,
+          setPieces: info?.pieces,
+          setTierDescriptions: info ? describeSetTiers(info.tiers, r.classType || save.classId) : [],
+          materialsDetail: Object.entries(r.materials).map(([matId, need]) => ({
+            id: matId, name: getItem(matId)?.name || matId, need, have: save.materials[matId] || 0,
+          })),
+        };
+      });
     if (shop.id === 'general') {
       return res.json({ shop, market: await getMarketSnapshot(), setRecipes });
     }

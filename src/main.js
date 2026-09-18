@@ -64,6 +64,9 @@ const S = {
   enhanceModalItemId: null, // 目前開啟強化/洗潛能彈出視窗的裝備 id,null 代表沒開啟(見 renderEnhanceModal)
   cubeChoicePreview: null, // 抉擇方塊「先預覽再選擇」的暫存結果:{ itemId, preview: { tier, lines } },套用/放棄後清空
   auctionFilter: { potentialKeys: new Set(), minAtk: '', minEnhanceUses: '' }, // 交易所搜尋條件:潛能種類(複選)/攻擊或魔攻最小值/強化次數最少幾次
+  setInfoModal: null, // 套裝效果彈出視窗內容:{ name, pieces, equippedCount(可選), tiers }(見 renderSetInfoModal)
+  shopSlotFilter: 'weapon', // 商店裝備製作目前選中的部位分頁籤(武器/防具/副手/飾品),避免4部位x多稀有度全部展開要滑很長
+  shopCategoryFilter: 'normal', // 商店裝備製作目前選中的類型分頁籤('normal'一般配方 | 'set'套裝配方)
 };
 
 function h(tag, attrs = {}, children = []) {
@@ -103,13 +106,16 @@ function mount(headerNodes, scrollNodes) {
   app.appendChild(root);
   scrollBox.scrollTop = scrollTop;
 
-  // 強化/洗潛能彈出視窗:疊在畫面最上層,直接掛在 body 而非 #app——#app 有 max-width/overflow:hidden
-  // 限制,掛在裡面視窗會被裁切或無法真正置中滿版覆蓋。每次重繪都先清掉舊的,避免重複疊加。
-  const oldModal = document.querySelector('.modal-overlay');
-  if (oldModal) oldModal.remove();
+  // 彈出視窗(強化/套裝效果):疊在畫面最上層,直接掛在 body 而非 #app——#app 有 max-width/overflow:hidden
+  // 限制,掛在裡面視窗會被裁切或無法真正置中滿版覆蓋。每次重繪都先清掉全部舊的,避免重複疊加。
+  document.querySelectorAll('.modal-overlay').forEach((n) => n.remove());
   if (S.enhanceModalItemId) {
     const modalNode = renderEnhanceModal();
     if (modalNode) document.body.appendChild(modalNode);
+  }
+  if (S.setInfoModal) {
+    const setModalNode = renderSetInfoModal();
+    if (setModalNode) document.body.appendChild(setModalNode);
   }
 }
 
@@ -666,6 +672,9 @@ function itemLabel(item) {
   // 耐久度只有武器/防具/副手才有(飾品 maxDurability 為 null,不顯示這段)
   const durabilityText = item.maxDurability != null ? `耐久 ${item.durability}/${item.maxDurability}` : null;
   const isBroken = item.maxDurability != null && item.durability <= 0;
+  // 套裝裝備直接標示「目前穿著幾件」,即使這件還在背包沒穿上也能看到「穿上後」的套裝進度是多少
+  // (見使用者回饋:不然誰知道有沒有觸發),詳細效果內容改點旁邊的 📖 圖示查看(renderSetInfoIconButton)。
+  const setProgress = item.setId ? (S.state?.setProgress || []).find((p) => p.setId === item.setId) : null;
   return h('div', {}, [
     h('div', {}, [
       `${item.name}${enhanceText} `,
@@ -673,6 +682,7 @@ function itemLabel(item) {
       ` (${itemTierLabel(item.tier)}${item.classType ? `・${classNameZh(item.classType)}` : ''}・Lv${item.itemLevel}・強化已用${uses}/${ENHANCE_MAX_USES}次${durabilityText ? `・${durabilityText}` : ''})`,
     ]),
     h('div', { class: 'hint' }, statsText(item.stats)),
+    setProgress ? h('div', { class: 'hint', style: 'color:#22d3ee;' }, `套裝「${setProgress.name}」目前穿著 ${setProgress.equippedCount}/${setProgress.pieces} 件`) : null,
     isBroken ? h('div', { class: 'durability-broken' }, '已損壞,無法裝備,只能賣給雜貨店回收') : null,
   ]);
 }
@@ -821,6 +831,51 @@ function renderEnhanceModal() {
   return overlay;
 }
 
+// 套裝效果圖示按鈕:只有 setId 存在(菁英/真王套裝)的裝備才會顯示,仿照強化圖示的模式——
+// 用小圖示+彈出視窗呈現完整套裝效果說明,不把這些文字直接攤開佔用卡片版面。
+function renderSetInfoIconButton(item) {
+  if (!item.setId) return null;
+  return h('button', {
+    class: 'btn enhance-icon-btn',
+    title: '查看套裝效果',
+    onclick: () => {
+      const progress = (S.state.setProgress || []).find((p) => p.setId === item.setId);
+      S.setInfoModal = progress
+        ? { name: progress.name, pieces: progress.pieces, equippedCount: progress.equippedCount, tiers: progress.tiers }
+        : null;
+      render();
+    },
+  }, '📖');
+}
+
+// 套裝效果彈出視窗:文字內容主要來自後端(商店配方帶 setTierDescriptions,已裝備的物品用
+// S.state.setProgress),前端只負責排版顯示,不重複計算職業特色屬性要顯示成什麼名稱。
+// info.equippedCount 有值時(從裝備欄/背包觸發)會額外標示每一階是否已解鎖;從商店配方觸發時
+// 沒有這個欄位,單純列出完整效果內容供玩家評估「值不值得湊」。
+function renderSetInfoModal() {
+  const info = S.setInfoModal;
+  if (!info) return null;
+  const close = () => { S.setInfoModal = null; render(); };
+  const showProgress = info.equippedCount != null;
+  let overlay;
+  overlay = h('div', {
+    class: 'modal-overlay',
+    onclick: (e) => { if (e.target === overlay) close(); },
+  }, [
+    h('div', { class: 'modal-box' }, [
+      h('h3', {}, `📖 ${info.name}`),
+      h('div', { class: 'hint' }, showProgress ? `目前穿著:${info.equippedCount}/${info.pieces} 件` : `共 ${info.pieces} 件套裝`),
+      h('div', { style: 'margin-top:10px;' }, info.tiers.map((t) => {
+        const unlocked = showProgress ? info.equippedCount >= t.count : null;
+        const style = unlocked === true ? 'color:#22c55e;font-weight:bold;padding:4px 0;' : unlocked === false ? 'color:#888;padding:4px 0;' : 'padding:4px 0;';
+        return h('div', { style }, `${unlocked === true ? '✅' : unlocked === false ? '⬜' : '・'} 穿${t.count}件:${t.text}`);
+      })),
+      h('button', { class: 'btn', style: 'margin-top:14px;', onclick: close }, '關閉'),
+    ]),
+  ]);
+  return overlay;
+}
+
 
 const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)', party_material: '組隊限定素材(僅組隊副本擊敗大王掉落)', trueboss_material: '真王結晶(僅地圖真王掉落,供頂級配方使用)' };
 
@@ -852,6 +907,8 @@ function renderInventory() {
       const item = s.equipment[slot];
       const q = item ? rollQualityInfo(item.rollQuality) : null;
       const enhanceText = item?.enhanceLevel ? ` ${item.enhanceLevel > 0 ? '+' : ''}${item.enhanceLevel}` : '';
+      // 套裝裝備直接標示「目前穿著幾件」,不用點進去才知道有沒有觸發效果(見使用者回饋)
+      const setProgress = item?.setId ? (s.setProgress || []).find((p) => p.setId === item.setId) : null;
       return h('div', { class: `equip-slot${item ? ` rarity-${item.tier}` : ''}` }, [
         h('div', { class: 'hint', style: 'font-size:11px;' }, slotLabelZh(slot)),
         item
@@ -860,10 +917,12 @@ function renderInventory() {
               h('span', { class: q.className }, `[${q.label}]`),
             ])
           : h('div', { class: 'equip-slot-name hint' }, '(空)'),
+        setProgress ? h('div', { class: 'hint', style: 'font-size:11px;color:#22d3ee;' }, `套裝 ${setProgress.equippedCount}/${setProgress.pieces} 件`) : null,
         item
           ? h('div', { class: 'equip-slot-actions' }, [
               h('button', { class: 'btn', onclick: async () => { await api.unequip(slot); await refreshInvState(); } }, '卸下'),
               renderEnhanceIconButton(item),
+              renderSetInfoIconButton(item),
             ])
           : null,
       ]);
@@ -900,6 +959,7 @@ function renderInventory() {
           },
         }, '上架交易所'),
         renderEnhanceIconButton(item),
+        renderSetInfoIconButton(item),
       ]),
     ]);
   }
@@ -965,7 +1025,9 @@ async function openShop(shopId) {
 // 商店配方稀有度/套裝標籤的顏色,一般配方(common/rare/epic)跟套裝配方(elite_set/trueboss_set)共用同一份色票
 const TIER_COLOR = { common: '#b0b0b0', rare: '#a855f7', epic: '#f59e0b', elite_set: '#22d3ee', trueboss_set: '#ef4444' };
 
-// 商店配方卡片:一般配方與套裝配方共用同一種呈現方式(名稱/金幣/材料需求/屬性/製作按鈕)
+// 商店配方卡片:一般配方與套裝配方共用同一種呈現方式(名稱/金幣/材料需求/屬性/製作按鈕)。
+// 套裝配方額外帶 setTierDescriptions 時,顯示「📖 套裝效果」圖示按鈕彈出完整效果說明(仿強化圖示),
+// 不把整段效果文字攤開佔用卡片版面——這是先前商店排版太長的主因之一。
 function renderRecipeCard(shopId, r) {
   const canAfford = r.materialsDetail.every((d) => d.have >= d.need);
   const matText = r.materialsDetail.map((d) => `${d.name} ${d.have}/${d.need}`).join('、');
@@ -974,18 +1036,30 @@ function renderRecipeCard(shopId, r) {
     h('span', { style: canAfford ? '' : 'color:#ef4444;' }, matText),
     h('span', {}, ')'),
     h('div', { class: 'hint' }, `屬性:${statsText(r.statBonus)}`),
-    h('button', {
-      class: 'btn primary',
-      onclick: async () => {
-        try {
-          const res = await api.craft(shopId, r.id);
-          S.error = `製作成功:${res.crafted.name}`;
-          S.state = res.state;
-          S.shopData = await api.getShop(shopId);
-          render();
-        } catch (e) { S.error = e.message; render(); }
-      },
-    }, '製作'),
+    h('div', { style: 'margin-top:4px;' }, [
+      r.setTierDescriptions && r.setTierDescriptions.length > 0
+        ? h('button', {
+            class: 'btn',
+            title: `${r.setName}套裝效果`,
+            onclick: () => {
+              S.setInfoModal = { name: r.setName, pieces: r.setPieces, tiers: r.setTierDescriptions };
+              render();
+            },
+          }, '📖 套裝效果')
+        : null,
+      h('button', {
+        class: 'btn primary',
+        onclick: async () => {
+          try {
+            const res = await api.craft(shopId, r.id);
+            S.error = `製作成功:${res.crafted.name}`;
+            S.state = res.state;
+            S.shopData = await api.getShop(shopId);
+            render();
+          } catch (e) { S.error = e.message; render(); }
+        },
+      }, '製作'),
+    ]),
   ]);
 }
 
@@ -1087,29 +1161,56 @@ function renderShop() {
       panel.appendChild(h('div', { class: 'card-grid' }, data.setRecipes.map((r) => renderRecipeCard(shopId, r))));
     }
   } else if (data) {
-    // 商店配方依「種類(部位)」分大項,每個部位大項內再區分「一般配方(依稀有度)」與「套裝配方(菁英/真王)」——
-    // 先前只依稀有度分3組、武器防具飾品混在一起,容易分不清楚哪些是要找的部位。
+    // 商店配方改為「部位分頁籤 + 一般/套裝類型分頁籤」:一次只顯示一個部位、一個類型的少量配方,
+    // 不再 4 部位 x 5 種稀有度/套裝全部展開——先前那樣要一路往下滑很長才看得完,使用者明確要求
+    // 「能在一個頁面看完就不要讓使用者滑動」。仿照強化功能給圖示彈視窗的思路,這裡改用分頁籤縮小
+    // 同時顯示的範圍,而不是把所有配方都攤開。
     panel.appendChild(h('h3', {}, '裝備製作(僅此商店可製作,無法透過打怪取得;不設等級門檻,材料+金幣足夠即可製作)'));
     const SHOP_SLOT_ORDER = ['weapon', 'armor', 'offhand', 'accessory'];
     const SHOP_SLOT_LABEL = { weapon: '⚔ 武器', armor: '🛡 防具', offhand: '🔰 副手', accessory: '💍 飾品' };
-    SHOP_SLOT_ORDER.forEach((slot) => {
-      const normalRecipesForSlot = (data.recipes || []).filter((r) => r.slot === slot);
-      const setRecipesForSlot = (data.setRecipes || []).filter((r) => r.slot === slot);
-      if (normalRecipesForSlot.length === 0 && setRecipesForSlot.length === 0) return;
-      panel.appendChild(h('h3', { style: 'margin-top:14px;font-size:16px;' }, SHOP_SLOT_LABEL[slot]));
+    const availableSlots = SHOP_SLOT_ORDER.filter((slot) =>
+      (data.recipes || []).some((r) => r.slot === slot) || (data.setRecipes || []).some((r) => r.slot === slot)
+    );
+    if (!availableSlots.includes(S.shopSlotFilter)) S.shopSlotFilter = availableSlots[0];
+
+    panel.appendChild(h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;' }, availableSlots.map((slot) =>
+      h('button', {
+        class: `btn${S.shopSlotFilter === slot ? ' primary' : ''}`,
+        onclick: () => { S.shopSlotFilter = slot; render(); },
+      }, SHOP_SLOT_LABEL[slot])
+    )));
+
+    const normalRecipesForSlot = (data.recipes || []).filter((r) => r.slot === S.shopSlotFilter);
+    const setRecipesForSlot = (data.setRecipes || []).filter((r) => r.slot === S.shopSlotFilter);
+    const categories = [];
+    if (normalRecipesForSlot.length > 0) categories.push({ key: 'normal', label: `一般配方(${normalRecipesForSlot.length})` });
+    if (setRecipesForSlot.length > 0) categories.push({ key: 'set', label: `套裝配方(${setRecipesForSlot.length})` });
+    if (!categories.some((c) => c.key === S.shopCategoryFilter)) S.shopCategoryFilter = categories[0]?.key;
+
+    if (categories.length > 1) {
+      panel.appendChild(h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;' }, categories.map((c) =>
+        h('button', {
+          class: `btn${S.shopCategoryFilter === c.key ? ' primary' : ''}`,
+          onclick: () => { S.shopCategoryFilter = c.key; render(); },
+        }, c.label)
+      )));
+    }
+
+    if (S.shopCategoryFilter === 'normal') {
       ['common', 'rare', 'epic'].forEach((tier) => {
         const tierRecipes = normalRecipesForSlot.filter((r) => r.tier === tier);
         if (tierRecipes.length === 0) return;
         panel.appendChild(h('div', { style: `color:${TIER_COLOR[tier]};font-weight:bold;margin-top:8px;` }, `【${tierRecipes[0].tierLabel}】`));
         panel.appendChild(h('div', { class: 'card-grid' }, tierRecipes.map((r) => renderRecipeCard(shopId, r))));
       });
+    } else if (S.shopCategoryFilter === 'set') {
       ['elite_set', 'trueboss_set'].forEach((tier) => {
         const tierRecipes = setRecipesForSlot.filter((r) => r.tier === tier);
         if (tierRecipes.length === 0) return;
         panel.appendChild(h('div', { style: `color:${TIER_COLOR[tier]};font-weight:bold;margin-top:8px;` }, `【${tierRecipes[0].tierLabel}・${tierRecipes[0].setName}】`));
         panel.appendChild(h('div', { class: 'card-grid' }, tierRecipes.map((r) => renderRecipeCard(shopId, r))));
       });
-    });
+    }
   }
 
   mount([topBar(), errorBanner()], [panel, h('button', { class: 'btn', onclick: () => { S.error = ''; S.view = 'hub'; render(); } }, '返回城鎮')]);
