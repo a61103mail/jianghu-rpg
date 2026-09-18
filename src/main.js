@@ -55,6 +55,7 @@ const S = {
   duelPending: null,
   duelMsg: '',
   onlinePlayers: [], // 在線玩家名單(不含自己),供決鬥畫面直接點選挑戰對象,不用手動輸入帳號
+  enhanceModalItemId: null, // 目前開啟強化/洗潛能彈出視窗的裝備 id,null 代表沒開啟(見 renderEnhanceModal)
 };
 
 function h(tag, attrs = {}, children = []) {
@@ -93,6 +94,15 @@ function mount(headerNodes, scrollNodes) {
   app.innerHTML = '';
   app.appendChild(root);
   scrollBox.scrollTop = scrollTop;
+
+  // 強化/洗潛能彈出視窗:疊在畫面最上層,直接掛在 body 而非 #app——#app 有 max-width/overflow:hidden
+  // 限制,掛在裡面視窗會被裁切或無法真正置中滿版覆蓋。每次重繪都先清掉舊的,避免重複疊加。
+  const oldModal = document.querySelector('.modal-overlay');
+  if (oldModal) oldModal.remove();
+  if (S.enhanceModalItemId) {
+    const modalNode = renderEnhanceModal();
+    if (modalNode) document.body.appendChild(modalNode);
+  }
 }
 
 // 系統訊息(S.error,身兼「錯誤」與「操作成功提示」兩用)一律放進 mount() 的 headerNodes(固定不動
@@ -679,47 +689,83 @@ function slotToScrollId(slot) {
   return 'scroll_accessory';
 }
 
-// 強化+洗潛能按鈕:裝備欄跟背包都會用到,itemId 帶入後端會自動找出該裝備目前在哪個位置。
-// 強化次數/淨強化值已經在 itemLabel 的標題行清楚顯示,這裡按鈕文字不重複列出,只保留操作本身跟必要的材料需求。
-function renderEnhanceControls(item) {
+// 從裝備欄或背包裡依 id 找出裝備物件——強化彈出視窗需要每次重繪時抓最新資料(強化後素質會變),
+// 不能只存一份物件快照,否則畫面顯示的會是操作前的舊數值。
+function findItemById(itemId) {
+  const s = S.state;
+  if (!s || !itemId) return null;
+  const equipped = Object.values(s.equipment).find((i) => i?.id === itemId);
+  if (equipped) return equipped;
+  return s.inventory.find((i) => i.id === itemId) || null;
+}
+
+// 強化/洗潛能圖示按鈕:放在每件裝備旁邊,用鐵砧圖示表示「打造/強化」,點擊後彈出獨立視窗操作,
+// 不再把強化控制項固定展開佔用卡片版面——這是先前「東西太多、太亂」的主因之一。
+function renderEnhanceIconButton(item) {
+  return h('button', {
+    class: 'btn enhance-icon-btn',
+    title: '強化 / 洗潛能',
+    onclick: () => { S.enhanceModalItemId = item.id; render(); },
+  }, '⚒️');
+}
+
+// 強化/洗潛能彈出視窗本體:名稱/素質/潛能/耐久等完整資訊,以及實際操作按鈕,通通集中在這裡,
+// 操作後視窗保持開啟並即時刷新(不用重新點擊圖示),關閉才回到背包/裝備欄列表。
+function renderEnhanceModal() {
+  const item = findItemById(S.enhanceModalItemId);
+  if (!item) { S.enhanceModalItemId = null; return null; }
   const consumables = S.state.consumables || [];
   const scrollId = slotToScrollId(item.slot);
   const scroll = consumables.find((c) => c.id === scrollId);
   const cube = consumables.find((c) => c.id === 'cube_potential');
   const uses = item.enhanceUses || 0;
   const usesLeft = ENHANCE_MAX_USES - uses;
-  return h('div', { style: 'margin-top:4px;' }, [
-    potentialLine(item),
-    usesLeft > 0
-      ? h('button', {
+  const close = () => { S.enhanceModalItemId = null; render(); };
+  let overlay;
+  overlay = h('div', {
+    class: 'modal-overlay',
+    onclick: (e) => { if (e.target === overlay) close(); }, // 點擊半透明背景視同取消,不用特地找關閉按鈕
+  }, [
+    h('div', { class: 'modal-box' }, [
+      h('h3', {}, `⚒️ 強化 / 洗潛能`),
+      itemLabel(item),
+      potentialLine(item),
+      h('div', { style: 'margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;' }, [
+        usesLeft > 0
+          ? h('button', {
+              class: 'btn primary',
+              title: `消耗1張${scroll?.name || ''}。每次從 -3~+3 之間隨機抽一個數值(機率平均,7種結果各約1/7)套用到裝備「全部現有屬性」——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差,也可能剛好抽到0完全沒變化。`,
+              onclick: async () => {
+                try {
+                  const r = await api.enhanceItem(item.id, scrollId);
+                  const deltaText = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+                  const resultDesc = r.delta > 0 ? `這次是加強(${deltaText})` : r.delta < 0 ? `這次是削弱(${deltaText})` : '這次沒有任何效果(抽到0)';
+                  S.error = `強化完成,${resultDesc}。`;
+                  S.state = r.state;
+                  render(); // 視窗保持開啟,直接刷新顯示最新素質,不用重新點鐵砧圖示
+                } catch (e) { S.error = e.message; render(); }
+              },
+            }, `強化(還可用${usesLeft}/${ENHANCE_MAX_USES}次,需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
+          : h('span', { class: 'hint' }, `已用完全部 ${ENHANCE_MAX_USES} 次強化機會`),
+        h('button', {
           class: 'btn',
-          title: `消耗1張${scroll?.name || ''}。每次從 -3~+3 之間隨機抽一個數值(機率平均,7種結果各約1/7)套用到裝備「全部現有屬性」——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差,也可能剛好抽到0完全沒變化。`,
+          title: `消耗1顆${cube?.name || ''}`,
           onclick: async () => {
             try {
-              const r = await api.enhanceItem(item.id, scrollId);
-              const deltaText = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
-              const resultDesc = r.delta > 0 ? `這次是加強(${deltaText})` : r.delta < 0 ? `這次是削弱(${deltaText})` : '這次沒有任何效果(抽到0)';
-              S.error = `強化完成,${resultDesc}。`;
+              const r = await api.cubeItem(item.id, 'cube_potential');
+              S.error = r.upgraded ? `洗鍊成功,潛能升階至【${POTENTIAL_TIER_LABEL[r.item.potential.tier]}】!` : '洗鍊完成,潛能詞條已重新產生。';
               S.state = r.state;
               render();
             } catch (e) { S.error = e.message; render(); }
           },
-        }, `強化(需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
-      : h('span', { class: 'hint' }, `已用完全部 ${ENHANCE_MAX_USES} 次強化機會`),
-    h('button', {
-      class: 'btn',
-      title: `消耗1顆${cube?.name || ''}`,
-      onclick: async () => {
-        try {
-          const r = await api.cubeItem(item.id, 'cube_potential');
-          S.error = r.upgraded ? `洗鍊成功,潛能升階至【${POTENTIAL_TIER_LABEL[r.item.potential.tier]}】!` : '洗鍊完成,潛能詞條已重新產生。';
-          S.state = r.state;
-          render();
-        } catch (e) { S.error = e.message; render(); }
-      },
-    }, `洗潛能(需${cube?.name || '方塊'}x1,持有${cube?.count || 0})`),
+        }, `洗潛能(需${cube?.name || '方塊'}x1,持有${cube?.count || 0})`),
+      ]),
+      h('button', { class: 'btn', style: 'margin-top:16px;', onclick: close }, '關閉'),
+    ]),
   ]);
+  return overlay;
 }
+
 
 const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)', party_material: '組隊限定素材(僅組隊副本擊敗大王掉落)', trueboss_material: '真王結晶(僅地圖真王掉落,供頂級配方使用)' };
 
@@ -736,25 +782,41 @@ function groupInventoryBySlot(inventory) {
   return groups;
 }
 
+// 裝備欄固定順序:武器/防具/副手各1格,飾品一/飾品二共2格
+const EQUIP_SLOT_ORDER = ['weapon', 'armor', 'offhand', 'accessory1', 'accessory2'];
+
 function renderInventory() {
   const s = S.state;
 
+  // 裝備欄改用格子視覺化(仿照使用者提供的示意圖):固定寬高的槽位,一眼分辨哪些部位已裝備、
+  // 哪些是空的,不再是純文字條列。格子內只留最關鍵的名稱/強化值/品質色,完整素質改用滑鼠提示(title)。
   const equipPanel = h('div', { class: 'panel' }, [
     h('h3', {}, '裝備欄'),
-    h('p', { class: 'hint' }, '武器/防具各1格;飾品(戒指/護符/項鍊/徽章)共2格,兩格用途相同、可任意放置,不分種類。'),
-    ...Object.entries(s.equipment).map(([slot, item]) =>
-      // 背包卡片有 rarity-${tier} 決定裝備品階顏色(灰/紫/橘),裝備欄先前漏加這個 class,
-      // 導致同一件裝備一放進裝備欄「顏色就不見了」變回預設白字,跟背包內看到的不一致。
-      h('div', { class: `item-card${item ? ` rarity-${item.tier}` : ''}` }, [
-        h('div', { class: 'hint' }, `【${slotLabelZh(slot)}】`),
-        item ? itemLabel(item) : h('div', {}, '(空)'),
-        item ? h('button', { class: 'btn', onclick: async () => { await api.unequip(slot); await refreshInvState(); } }, '卸下') : null,
-        item ? renderEnhanceControls(item) : null,
-      ])
-    ),
+    h('p', { class: 'hint' }, '武器/防具/副手各1格;飾品(戒指/護符/項鍊/徽章)共2格,兩格用途相同、可任意放置,不分種類。滑鼠移到裝備名稱上可看完整素質。'),
+    h('div', { class: 'equip-slot-grid' }, EQUIP_SLOT_ORDER.map((slot) => {
+      const item = s.equipment[slot];
+      const q = item ? rollQualityInfo(item.rollQuality) : null;
+      const enhanceText = item?.enhanceLevel ? ` ${item.enhanceLevel > 0 ? '+' : ''}${item.enhanceLevel}` : '';
+      return h('div', { class: `equip-slot${item ? ` rarity-${item.tier}` : ''}` }, [
+        h('div', { class: 'hint', style: 'font-size:11px;' }, slotLabelZh(slot)),
+        item
+          ? h('div', { class: 'equip-slot-name', title: `${statsText(item.stats)}${item.maxDurability != null ? ` ・耐久${item.durability}/${item.maxDurability}` : ''}` }, [
+              `${item.name}${enhanceText} `,
+              h('span', { class: q.className }, `[${q.label}]`),
+            ])
+          : h('div', { class: 'equip-slot-name hint' }, '(空)'),
+        item
+          ? h('div', { class: 'equip-slot-actions' }, [
+              h('button', { class: 'btn', onclick: async () => { await api.unequip(slot); await refreshInvState(); } }, '卸下'),
+              renderEnhanceIconButton(item),
+            ])
+          : null,
+      ]);
+    })),
   ]);
 
-  // 單張背包裝備卡片:名稱/素質/操作按鈕/強化區都在同一張卡片內,不额外拆分,但改用清楚的分行呈現(見 itemLabel)
+  // 單張背包裝備卡片:名稱/素質(見 itemLabel)+ 操作按鈕(裝備/賣出/上架/強化圖示)都在同一列,
+  // 強化控制項已移到彈出視窗(見 renderEnhanceIconButton/renderEnhanceModal),卡片本身更精簡。
   function renderInventoryItemCard(item) {
     // 飾品是通用格(accessory),裝備時要讓玩家自己選放飾品一還是飾品二;
     // 武器/防具/副手維持單一「裝備」按鈕。
@@ -766,7 +828,7 @@ function renderInventory() {
       : [h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備')];
     return h('div', { class: `item-card rarity-${item.tier}` }, [
       itemLabel(item),
-      h('div', {}, [
+      h('div', { style: 'margin-top:4px;' }, [
         ...equipButtons,
         item.tier === 'common' ? h('button', { class: 'btn', onclick: async () => { try { const r = await api.sellGear(item.id); S.error = `賣出獲得 ${r.earned} 金幣`; S.state = r.state; render(); } catch (e) { S.error = e.message; render(); } } }, '賣給商店') : null,
         h('input', { type: 'number', id: `price-${item.id}`, placeholder: '開價', style: 'width:80px;display:inline-block;margin:0 4px;' }),
@@ -782,8 +844,8 @@ function renderInventory() {
             } catch (e) { S.error = e.message; render(); }
           },
         }, '上架交易所'),
+        renderEnhanceIconButton(item),
       ]),
-      renderEnhanceControls(item),
     ]);
   }
 

@@ -194,6 +194,23 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 .item-card.rarity-rare { color: #a855f7; }
 .item-card.rarity-epic { color: #f59e0b; }
 
+/* 裝備欄槽位視覺化:固定寬高的格子,一眼看出哪些部位有裝備、哪些是空的,取代原本純文字條列。 */
+.equip-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.equip-slot { background: #241f16; border: 1px solid var(--panel-border); border-radius: 4px; padding: 8px; min-height: 100px; display: flex; flex-direction: column; }
+.equip-slot.rarity-common { color: #b0b0b0; }
+.equip-slot.rarity-rare { color: #a855f7; }
+.equip-slot.rarity-epic { color: #f59e0b; }
+.equip-slot-name { flex: 1; font-size: 13px; margin: 4px 0; word-break: break-all; }
+.equip-slot-actions { display: flex; gap: 4px; }
+.equip-slot-actions .btn { padding: 3px 6px; font-size: 12px; }
+
+/* 強化/洗潛能圖示按鈕(鐵砧):放在每件裝備旁邊,點擊彈出強化視窗,不再把強化控制項固定展開佔版面 */
+.enhance-icon-btn { padding: 3px 8px; font-size: 15px; line-height: 1; }
+
+/* 強化彈出視窗:蓋在全畫面最上層(掛在 body,不受 #app 版面限制),背景半透明黑,視窗本體置中 */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+.modal-box { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 8px; padding: 18px; max-width: 520px; width: 100%; max-height: 85vh; overflow-y: auto; }
+
 /* 卡片式列表(地圖、配方、裝備清單等)改用自動換行的多欄網格,取代單欄一路往下排列 */
 .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
 .card-grid > .item-card { margin-bottom: 0; }
