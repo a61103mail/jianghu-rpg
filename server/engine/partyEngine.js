@@ -12,7 +12,7 @@
 //   (材料/雜物/裝備),不用「比手速搶最後一擊」,人人都有實質收穫。
 import { getMap, getMonster } from '../data/monsterData.js';
 import { getClass } from '../data/classData.js';
-import { rollDamage, narrateAttack, narrateEnemyAttack, sumBuffValue, tickBuffs } from './combatEngine.js';
+import { rollDamage, narrateAttack, narrateEnemyAttack, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from './combatEngine.js';
 
 const parties = new Map(); // partyCode -> party
 
@@ -21,6 +21,12 @@ function randomCode() {
 }
 
 export function createParty(leader) {
+  // 建立新隊伍前,先清掉此玩家可能殘留在「其他隊伍」的舊身分——先前斷線時只會清空 socketId、
+  // 不會真的移除成員資格(見 disconnect 處理的說明),若玩家很久以前組過隊卻沒有正式「離隊」就
+  // 直接關閉分頁,對他來說形同已經離開,但伺服器記憶體裡這個隊伍其實還留著他的殘影,下次他再
+  // 建立新隊伍時,舊隊伍的殘影跟新隊伍是兩個獨立的東西,不會互相污染,但為了避免同一玩家同時
+  // 「掛名」在多個隊伍造成混亂與資料不一致,一律先清乾淨舊身分再建立新隊伍。
+  leaveParty(leader.userId);
   let code = randomCode();
   while (parties.has(code)) code = randomCode();
   const party = {
@@ -48,6 +54,8 @@ export function joinParty(code, member) {
   if (!party) return null;
   if (party.combat) return null; // 戰鬥進行中不可中途加入
   if (party.members.length >= 4) return null;
+  // 加入新隊伍前同樣先清掉舊隊伍的殘留身分,理由同 createParty
+  if (findPartyByUser(member.userId)?.code !== code) leaveParty(member.userId);
   if (!party.members.find((m) => m.userId === member.userId)) {
     party.members.push(member);
   }
@@ -63,6 +71,15 @@ export function leaveParty(userId) {
     return null;
   }
   return party;
+}
+
+// 副本結束(通關或落敗)後清理:任何在戰鬥途中斷線、socketId 已是 null 的成員視同已離隊——
+// 不然這些「幽靈成員」會一直掛在隊伍名單裡,下次真正的隊員回來看到的人數對不上實際在線人數,
+// 也會讓王波規模(依人數決定隻數/血量倍率)被幽靈成員錯誤地放大。
+export function purgeDisconnectedMembers(party) {
+  if (!party) return;
+  const ghosts = party.members.filter((m) => !m.socketId).map((m) => m.userId);
+  ghosts.forEach((uid) => leaveParty(uid));
 }
 
 export function updateMemberSocket(userId, socketId) {
@@ -146,6 +163,8 @@ export function startBountyCombat(party, mapId) {
         mp: m.stats.maxMp ?? m.stats.mp,
         maxMp: m.stats.maxMp ?? m.stats.mp,
         stats: m.stats,
+        equipment: m.equipment, // 直接引用(非深拷貝):戰鬥中耐久度消耗會直接改到這份物件,
+        // 通關/落敗時 index.js 的 reward 迴圈需要把這份耐久度變化寫回真正的存檔。
         buffs: [],
       }])
     ),
@@ -230,6 +249,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
       const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
       target.hp = Math.max(0, target.hp - amount);
       lines.push(`${actor.username}施展「${skill.name}」!` + narrateAttack({ attackerName: actor.username, defenderName: target.name, amount, isCrit }));
+      consumeWeaponDurability(actor.equipment);
     } else if (action === 'aoe') {
       lines.push(`${actor.username}施展「${skill.name}」,席捲全場!`);
       combat.enemies.forEach((target) => {
@@ -238,6 +258,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
         target.hp = Math.max(0, target.hp - amount);
         lines.push(narrateAttack({ attackerName: actor.username, defenderName: target.name, amount, isCrit }));
       });
+      consumeWeaponDurability(actor.equipment);
     } else if (skill.healPct) {
       const amt = Math.round(actor.maxHp * skill.healPct);
       actor.hp = Math.min(actor.maxHp, actor.hp + amt);
@@ -290,6 +311,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
     const isDefendingTarget = defending && targetId === userId;
     const finalAmount = isDefendingTarget ? Math.max(1, Math.ceil(boosted * 0.5)) : boosted;
     target.hp = Math.max(0, target.hp - finalAmount);
+    consumeArmorDurability(target.equipment);
     if (isChargeRelease) {
       lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!對${target.username}造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${isDefendingTarget ? '(防禦大幅減輕了衝擊)' : ''}。`);
     } else {

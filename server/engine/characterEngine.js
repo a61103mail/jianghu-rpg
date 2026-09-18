@@ -51,6 +51,14 @@ export function computeMpRegen(lastRegenAt, currentMp, maxMp) {
 }
 
 // 依職業基礎值 + 玩家配點 + 等級 + 裝備,計算角色目前完整戰鬥屬性
+// 裝備耐久度歸零(0/500)視同「損壞、暫時卸下」——不提供任何數值加成,但保留在裝備欄位上讓玩家
+// 看得到(需要玩家自己去雜貨店賣掉騰出空位或修理,見 game.js 的耐久相關邏輯)。
+function isItemUsable(item) {
+  if (!item) return false;
+  if (item.maxDurability == null) return true; // 飾品沒有耐久度上限,永遠有效
+  return (item.durability ?? item.maxDurability) > 0;
+}
+
 export function computeStats(save) {
   const cls = getClass(save.classId);
   const alloc = save.allocatedStats || { str: 0, dex: 0, int: 0, luk: 0 };
@@ -62,7 +70,7 @@ export function computeStats(save) {
   let gearStr = 0, gearDex = 0, gearInt = 0, gearLuk = 0;
   GEAR_SLOTS.forEach((slot) => {
     const item = save.equipment[slot];
-    if (!item?.stats) return;
+    if (!isItemUsable(item) || !item.stats) return;
     gearStr += item.stats.str || 0;
     gearDex += item.stats.dex || 0;
     gearInt += item.stats.int || 0;
@@ -94,7 +102,7 @@ export function computeStats(save) {
 
   GEAR_SLOTS.forEach((slot) => {
     const item = save.equipment[slot];
-    if (!item) return;
+    if (!isItemUsable(item)) return;
     const bonus = getItemTotalStats(item);
     atk += bonus.atk || 0;
     matk += bonus.matk || 0;
@@ -112,7 +120,7 @@ export function computeStats(save) {
   let potentialAtkPowerPct = 0, potentialDefPct = 0, potentialHpPct = 0, potentialCritRatePct = 0;
   GEAR_SLOTS.forEach((slot) => {
     const item = save.equipment[slot];
-    if (!item?.potential?.lines) return;
+    if (!isItemUsable(item) || !item?.potential?.lines) return;
     item.potential.lines.forEach((line) => {
       if (line.key === 'atkPowerPct') potentialAtkPowerPct += line.value;
       else if (line.key === 'defPct') potentialDefPct += line.value;

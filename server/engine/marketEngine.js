@@ -82,8 +82,9 @@ export async function sellItemToMarket(itemId, qty) {
   return unitPrice * qty;
 }
 
-export async function getPotionPriceInfo(potionId) {
-  const market = await loadMarket();
+// 純同步計算(不重新讀資料庫),供已經持有 market 物件的呼叫端直接複用,避免像 getMarketSnapshot
+// 這種要對多個藥水各自計算價格的情況,重複 loadMarket() 好幾次。
+function potionPriceInfoFromMarket(market, potionId) {
   const potion = getPotion(potionId);
   const bonus = market.bonusPotionStock[potionId] || 0;
   return {
@@ -92,6 +93,11 @@ export async function getPotionPriceInfo(potionId) {
     discounted: bonus > 0,
     bonusStock: bonus,
   };
+}
+
+export async function getPotionPriceInfo(potionId) {
+  const market = await loadMarket();
+  return potionPriceInfoFromMarket(market, potionId);
 }
 
 // 購買藥水,優先消耗特惠庫存(半價),超出特惠庫存的部分以原價計算,回傳總花費金幣
@@ -120,6 +126,6 @@ export async function getMarketSnapshot() {
       stock: market.stock[id] || 0,
       currentPrice: priceForStock(item.basePrice, market.stock[id] || 0),
     }));
-  const potions = POTION_ORDER.map((id) => ({ id, ...getPotionPriceInfo(id) }));
+  const potions = POTION_ORDER.map((id) => ({ id, ...potionPriceInfoFromMarket(market, id) }));
   return { sellables, potions };
 }

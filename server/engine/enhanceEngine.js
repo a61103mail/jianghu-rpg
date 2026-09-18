@@ -1,54 +1,53 @@
 // 裝備強化引擎(奇幻練功MMO):對應「卷軸」與「方塊」兩套機制。
-// 卷軸(強化):+0~+10,每次成功機率隨等級遞減,失敗只損失卷軸本身、不會摧毀裝備(維持公平,不搞爆裝備那一套)。
+// 卷軸(強化):每件裝備最多使用 5 次,每次「全部現有屬性」一起 ±3(百分比類屬性以百分點為單位,
+// 即 +3 代表 +3 個百分點=+0.03),正負各半機率,不是穩定往上疊的「保證進步」系統,而是真正有賭注——
+// 用得好可以到 +15,運氣差也可能弄到 -15,不再區分「只強化攻擊力」,裝備上不管哪個屬性都會一起變動。
 // 方塊(潛能):洗出 1~3 條隨機百分比詞條,分稀有/史詩/傳說三階,使用時有機率讓潛能整體升階。
 
-export const ENHANCE_MAX_LEVEL = 10;
+export const ENHANCE_MAX_USES = 5;
+const ENHANCE_DELTA = 3; // 每次強化的變動量:整數類屬性(atk/def/hp等)為±3點,百分比類屬性(帶Pct後綴)為±3個百分點(±0.03)
 
-// 每一次強化嘗試(從目前等級升到下一級)的成功機率,索引 0 代表 +0→+1
-const ENHANCE_SUCCESS_RATE = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15];
+// 舊版相容:先前 UI/呼叫端可能還引用 ENHANCE_MAX_LEVEL 這個名稱,維持匯出但語意改為「最大使用次數」
+export const ENHANCE_MAX_LEVEL = ENHANCE_MAX_USES;
 
-// 每次強化成功,依部位增加的固定數值(飾品依裝備本身現有的屬性決定要加會心還是氣血)
-const ENHANCE_GAIN = {
-  weapon: { atk: 3, matk: 3 },
-  armor: { def: 2, hp: 6 },
-  accessory: { critRatePct: 0.4, hp: 5 },
-};
-
-export function getEnhanceSuccessRate(currentLevel) {
-  if (currentLevel >= ENHANCE_MAX_LEVEL) return 0;
-  return ENHANCE_SUCCESS_RATE[currentLevel];
-}
-
-// 卷軸的 appliesTo 是 weapon/armor/accessory,飾品涵蓋 accessory1/accessory2 兩個部位
+// 卷軸的 appliesTo 是 weapon/armor/accessory,飾品涵蓋 accessory1/accessory2 兩個部位,副手另計
 function slotCategory(slot) {
   if (slot === 'weapon') return 'weapon';
   if (slot === 'armor') return 'armor';
+  if (slot === 'offhand') return 'offhand';
   return 'accessory';
 }
 
-// 對裝備套用一次強化卷軸,回傳 { success, item, rate }。裝備物件會被直接修改(呼叫端記得存檔)。
+// 對裝備套用一次強化卷軸:每個現有的 item.stats 欄位各自獨立擲一次正負號,50/50 機率,
+// 幅度固定 ±3(百分比類屬性則是 ±3 個百分點)。回傳 { success, item, deltas, usesLeft }。
+// success 這裡代表「整體是加強(正)還是削弱(負)」,由本次擲出的正負號決定,同一次強化裡
+// 所有屬性一律同號(不會出現「攻擊力變強但防禦力變弱」這種同一次操作卻互相矛盾的結果)。
 export function rollEnhance(item) {
-  const level = item.enhanceLevel || 0;
-  const rate = getEnhanceSuccessRate(level);
-  if (rate <= 0) return { success: false, item, rate, maxed: true };
-  const success = Math.random() < rate;
-  if (!success) return { success: false, item, rate };
+  const uses = item.enhanceUses || 0;
+  if (uses >= ENHANCE_MAX_USES) return { success: false, item, maxed: true, usesLeft: 0 };
 
-  const category = slotCategory(item.slot);
-  const gainTable = ENHANCE_GAIN[category];
+  const positive = Math.random() < 0.5;
+  const sign = positive ? 1 : -1;
   item.stats = item.stats || {};
-  if (category === 'weapon') {
-    const key = item.stats.matk !== undefined ? 'matk' : 'atk';
-    item.stats[key] = (item.stats[key] || 0) + gainTable[key];
-  } else if (category === 'armor') {
-    item.stats.def = (item.stats.def || 0) + gainTable.def;
-    item.stats.hp = (item.stats.hp || 0) + gainTable.hp;
-  } else {
-    const key = item.stats.critRatePct !== undefined ? 'critRatePct' : 'hp';
-    item.stats[key] = Math.round(((item.stats[key] || 0) + gainTable[key]) * 10) / 10;
-  }
-  item.enhanceLevel = level + 1;
-  return { success: true, item, rate };
+  const deltas = {};
+  Object.keys(item.stats).forEach((key) => {
+    const isPct = key.toLowerCase().includes('pct');
+    const delta = isPct ? sign * (ENHANCE_DELTA / 100) : sign * ENHANCE_DELTA;
+    // 下限保護:避免多次負向強化把數值弄到深度負值造成後續戰鬥公式異常(如負攻擊力算出負傷害),
+    // 百分比類最低壓在 0,整數類最低壓在 1——「很爛」但不會整個壞掉,呼應「這是賭注不是懲罰到報廢」。
+    const floor = isPct ? 0 : 1;
+    const newValue = Math.max(floor, item.stats[key] + delta);
+    deltas[key] = Math.round((newValue - item.stats[key]) * 1000) / 1000;
+    item.stats[key] = Math.round(newValue * 1000) / 1000;
+  });
+  item.enhanceUses = uses + 1;
+  // enhanceLevel 保留作為「目前淨強化點數」的顯示用途(可能是負數,例如 -6),UI 上顯示 +N 或 -N
+  item.enhanceLevel = (item.enhanceLevel || 0) + sign * ENHANCE_DELTA;
+  return { success: positive, item, deltas, usesLeft: ENHANCE_MAX_USES - item.enhanceUses };
+}
+
+export function getEnhanceSuccessRate() {
+  return 0.5; // 固定 50/50,不再隨等級遞減(新系統本身就是有賭注的±3,不需要额外的成功率曲線)
 }
 
 // 潛能:三階(稀有/史詩/傳說),每階可洗出的詞條數與數值範圍不同

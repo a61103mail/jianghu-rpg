@@ -25,6 +25,7 @@ import {
   startBountyCombat,
   partyMemberAction,
   endCombat,
+  purgeDisconnectedMembers,
 } from './engine/partyEngine.js';
 import { challenge, getPendingChallenge, declineChallenge, acceptChallenge, findDuelByUser, duelAttack, endDuel } from './engine/duelEngine.js';
 
@@ -168,7 +169,7 @@ io.on('connection', (socket) => {
     const row = await getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
-    const party = createParty({ userId, username, classId: save.classId, stats, socketId: socket.id });
+    const party = createParty({ userId, username, classId: save.classId, stats, equipment: save.equipment, socketId: socket.id });
     socket.join(party.code);
     socket.emit('party:joined', { code: party.code, members: party.members.map((m) => ({ userId: m.userId, username: m.username })) });
   }));
@@ -177,7 +178,7 @@ io.on('connection', (socket) => {
     const row = await getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
-    const party = joinParty(code, { userId, username, classId: save.classId, stats, socketId: socket.id });
+    const party = joinParty(code, { userId, username, classId: save.classId, stats, equipment: save.equipment, socketId: socket.id });
     if (!party) return socket.emit('party:error', { error: '找不到隊伍,或隊伍已滿/戰鬥中' });
     socket.join(party.code);
     broadcastParty(party, 'party:joined', { code: party.code, members: party.members.map((m) => ({ userId: m.userId, username: m.username })) });
@@ -257,6 +258,17 @@ io.on('connection', (socket) => {
             drops.push(`裝備:${gear.name}`);
           }
         });
+        // 把副本戰鬥中實際累積的氣血/真力損耗寫回真正的存檔——先前這裡完全沒有同步,通關後
+        // save.hp/save.mp 還停留在「進副本前」的數值,玩家會看到自己好像「打完就自動全滿血」,
+        // 其實是壓根沒扣血記錄過,不是真的恢復。跟單人戰鬥(game.js)的 save.hp = combat.playerHp
+        // 是同一件事,只是組隊這邊先前漏掉了。裝備耐久度消耗同理,也要把戰鬥中直接修改過的
+        // combatMember.equipment 寫回真正的 memberSave.equipment(組隊也是打怪,理應跟單人一致)。
+        const combatMember = party.combat.members[m.userId];
+        if (combatMember) {
+          memberSave.hp = Math.max(1, combatMember.hp);
+          memberSave.mp = Math.max(0, combatMember.mp);
+          if (combatMember.equipment) memberSave.equipment = combatMember.equipment;
+        }
         addLog(memberSave, `與同伴合力通關副本,獲得 ${result.totalExp} 點經驗${drops.length ? `,戰利品:${drops.join('、')}` : ''}。`);
         if (leveledTo) addLog(memberSave, `升級至 Lv.${leveledTo}。`);
         await putSaveStmt.run(m.userId, JSON.stringify(memberSave), new Date().toISOString());
@@ -264,8 +276,26 @@ io.on('connection', (socket) => {
         if (sid) io.to(sid).emit('party:reward', { totalExp: result.totalExp, drops, leveledTo });
       }
       endCombat(party);
+      purgeDisconnectedMembers(party);
     } else if (result.ended === 'lose') {
+      // 落敗同樣要把氣血/真力寫回存檔——全隊落敗時每個人在戰鬥中都是 0 氣血,直接照抄會變成
+      // 「打輸了氣血歸零、下次連城鎮都進不去」,故套用跟單人戰敗一致的 35% 氣血保底恢復。
+      // 裝備耐久度變化(同上)也要先寫回,才能讓 computeStats 算出的 maxHp 正確反映耐久耗盡的裝備已失效。
+      for (const m of party.members) {
+        const row = await getSaveStmt.get(m.userId);
+        const memberSave = JSON.parse(row.data);
+        const combatMember = party.combat.members[m.userId];
+        if (combatMember) {
+          if (combatMember.equipment) memberSave.equipment = combatMember.equipment;
+          const stats = computeStats(memberSave);
+          memberSave.hp = Math.max(1, Math.round(stats.maxHp * 0.35));
+          memberSave.mp = Math.max(0, combatMember.mp);
+        }
+        addLog(memberSave, '副本挑戰落敗,狼狽退回城鎮。');
+        await putSaveStmt.run(m.userId, JSON.stringify(memberSave), new Date().toISOString());
+      }
       endCombat(party);
+      purgeDisconnectedMembers(party);
     }
   }));
 
@@ -306,6 +336,7 @@ io.on('connection', (socket) => {
     const duel = findDuelByUser(userId);
     if (!duel) return socket.emit('duel:error', { error: '目前沒有進行中的決鬥' });
     const result = duelAttack(duel, userId);
+    if (result.rejected) return socket.emit('duel:error', { error: result.lines[0] });
     const payload = { duel, lines: result.lines };
     [duel.a.userId, duel.b.userId].forEach((uid) => {
       const sid = onlineUsers.get(uid);
@@ -340,8 +371,16 @@ io.on('connection', (socket) => {
     broadcastPresence();
     const party = findPartyByUser(userId);
     if (party) {
-      const member = party.members.find((m) => m.userId === userId);
-      if (member) member.socketId = null; // 保留隊伍成員資格,允許重新連線後歸隊
+      // 只有「戰鬥進行中」才保留成員資格(socketId 設為 null,允許重新連線後歸隊,不會被踢出戰鬥)。
+      // 若隊伍還在組隊大廳(尚未開打),斷線就直接視同離隊——先前不分情況一律「軟保留」,
+      // 導致玩家隨手關掉分頁、隔天再打開遊戲,舊隊伍裡仍卡著他的殘影,下次真正組隊時人數對不上,
+      // 也會讓王波規模(依人數決定)被幽靈成員錯誤放大。
+      if (party.combat) {
+        const member = party.members.find((m) => m.userId === userId);
+        if (member) member.socketId = null;
+      } else {
+        leaveParty(userId);
+      }
     }
   });
 });

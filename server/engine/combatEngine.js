@@ -18,6 +18,25 @@ export function computeEvasionRate({ dex, level }) {
   return Math.max(0, Math.min(EVASION_CAP, raw));
 }
 
+// 裝備耐久度消耗(僅套用在「打怪」場景:單人闖蕩、組隊副本;決鬥屬於玩家間切磋,不消耗耐久)。
+// 武器每次「攻擊指令」(basic/aoe)固定 -1,防具/副手每次「實際受到一次傷害」(非miss)固定 -1。
+// 耐久歸零的裝備視同損壞,不會再繼續往負的方向扣(用 Math.max(0, ...) 卡住),仍留在裝備欄上
+// 讓玩家自己看到、自己決定要不要去雜貨店賣掉騰位置(見 characterEngine.js 的 isItemUsable)。
+export function consumeWeaponDurability(equipment) {
+  const weapon = equipment?.weapon;
+  if (weapon && weapon.maxDurability != null) {
+    weapon.durability = Math.max(0, (weapon.durability ?? weapon.maxDurability) - 1);
+  }
+}
+export function consumeArmorDurability(equipment) {
+  ['armor', 'offhand'].forEach((slot) => {
+    const item = equipment?.[slot];
+    if (item && item.maxDurability != null) {
+      item.durability = Math.max(0, (item.durability ?? item.maxDurability) - 1);
+    }
+  });
+}
+
 const ATTACK_VERBS = ['奮力揮擊', '欺身突進', '猛然出手', '瞄準破綻攻去', '使出全力一擊'];
 const CRIT_PHRASES = ['正中要害', '是漂亮的會心一擊', '力道貫穿而入'];
 const NORMAL_PHRASES = ['扎實挨了一記', '未能完全閃避', '硬生生受了一下'];

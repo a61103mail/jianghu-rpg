@@ -56,6 +56,15 @@ function commonAccessoryStat(level) {
   return { stats: { dex: r.value }, quality: r.quality };
 }
 
+// 裝備耐久度:武器/防具上限固定 500,飾品不受耐久限制(不會壞、可以一直戴著)。
+// 目的是抑制裝備無限累積、交易所被舊裝備灌爆——裝備會隨著實際戰鬥使用逐漸耗損,
+// 耐久歸零後無法再穿戴/使用,只能賣給雜貨店回收(不能上架交易所賣給其他玩家一個報廢品)。
+export const MAX_DURABILITY = 500;
+function durabilityFieldsFor(slot) {
+  if (slot === 'accessory' || slot === 'accessory1' || slot === 'accessory2') return { durability: null, maxDurability: null };
+  return { durability: MAX_DURABILITY, maxDurability: MAX_DURABILITY };
+}
+
 // 普通裝備:打怪掉落時依怪物等級隨機生成(武器會限定職業類型,防具/飾品任何職業皆可用)。
 // 飾品掉落時只標記為通用的「accessory」,不預先綁定飾品一/飾品二——
 // 曾經用隨機直接指定 accessory1/accessory2,結果玩家可能連續好幾次都抽到同一格,
@@ -81,7 +90,7 @@ export function generateCommonGear(monsterLevel) {
     name = ACCESSORY_NAMES[Math.floor(Math.random() * ACCESSORY_NAMES.length)];
     result = commonAccessoryStat(monsterLevel);
   }
-  return { id: nextId(), slot, name, tier: 'common', classType, itemLevel: monsterLevel, stats: result.stats, rollQuality: result.quality, enhanceLevel: 0, potential: null };
+  return { id: nextId(), slot, name, tier: 'common', classType, itemLevel: monsterLevel, stats: result.stats, rollQuality: result.quality, enhanceLevel: 0, enhanceUses: 0, potential: null, ...durabilityFieldsFor(slot) };
 }
 
 // 稀有裝備:僅能透過商店配方製作,固定對應該商店的職業(見 RARE_RECIPES / SHOP_TO_CLASS)
@@ -105,8 +114,10 @@ export function craftRareItem(shopId, recipe) {
     itemLevel: TIER_DISPLAY_LEVEL[recipe.tier] || 20,
     stats,
     rollQuality: averageQuality(rolls),
-    enhanceLevel: 0, // 強化等級(0~10),見 enhanceEngine.js
+    enhanceLevel: 0, // 目前淨強化點數(可能是負的),見 enhanceEngine.js
+    enhanceUses: 0, // 強化卷軸已使用次數(上限5次),見 enhanceEngine.js
     potential: null, // 潛能(方塊洗出的隨機百分比詞條),初始為空,見 enhanceEngine.js
+    ...durabilityFieldsFor(recipe.slot),
   };
 }
 

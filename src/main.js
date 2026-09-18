@@ -1,5 +1,5 @@
 // 勇者闖蕩:前端主程式(單一 view-state 應用,無框架)
-import { api, setToken, clearToken, getToken } from './api.js';
+import { api, setToken, clearToken, getToken, getUsernameFromToken } from './api.js';
 import { connectSocket, getSocket, disconnectSocket } from './socket.js';
 
 const app = document.getElementById('app');
@@ -91,6 +91,14 @@ function mount(headerNodes, scrollNodes) {
   scrollBox.scrollTop = scrollTop;
 }
 
+// 系統訊息(S.error,身兼「錯誤」與「操作成功提示」兩用)一律放進 mount() 的 headerNodes(固定不動
+// 的區域),不要放進可捲動內容的最下面——先前訊息混在內容區塊尾端,玩家操作後畫面沒有明顯反應,
+// 得自己往下捲才看得到「金額不足」之類的提示,還以為是系統沒反應/bug。放在標題列正下方,
+// 不管內容多長、捲到哪裡,訊息永遠在最顯眼、不需要捲動就看得到的位置。
+function errorBanner() {
+  return S.error ? h('div', { class: 'error-msg', style: 'margin:6px 0 0;' }, S.error) : null;
+}
+
 async function refreshState() {
   const res = await api.getState();
   S.state = res.state;
@@ -116,16 +124,23 @@ function topBar() {
   const s = S.state;
   const hpPct = Math.round((s.hp / s.maxHp) * 100);
   const mpPct = Math.round((s.mp / s.maxMp) * 100);
+  const expPct = Math.round((s.exp / s.expNeeded) * 100);
   return h('div', { class: 'panel' }, [
-    h('div', { class: 'top-bar' }, [
-      h('div', {}, [
-        h('h2', {}, `${S.username || ''} · ${s.className} · Lv.${s.level}`),
-        h('div', { class: 'hint' }, `經驗 ${s.exp}/${s.expNeeded} ・ 金幣 ${s.gold}${s.statPoints > 0 ? ` ・ 可配點 ${s.statPoints}` : ''}`),
+    h('div', {}, [
+      h('h2', {}, `${S.username || ''} · ${s.className}`),
+      // 等級跟金幣玩家反映不夠明顯,獨立拉出一整排、用大字+強調色顯示,不再跟其他小字資訊擠在一起
+      h('div', { class: 'level-gold-row' }, [
+        h('span', {}, `Lv.${s.level}`),
+        h('span', { class: 'gold-value' }, `金幣 ${s.gold}`),
+        s.statPoints > 0 ? h('span', {}, `可配點 ${s.statPoints}`) : null,
       ]),
-      h('div', { style: 'min-width:200px' }, [
-        h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${hpPct}%` }), h('div', { class: 'bar-label' }, `氣血 ${s.hp}/${s.maxHp}`)]),
-        h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill mp', style: `width:${mpPct}%` }), h('div', { class: 'bar-label' }, `真力 ${s.mp}/${s.maxMp}`)]),
-      ]),
+    ]),
+    // 氣血/真力/經驗值三條一起用同樣的進度條樣式顯示——經驗值先前只有小字文字「經驗0/50」不夠顯眼,
+    // 玩家反映看不出進度,現在跟血條/真力條同樣視覺重量,一眼就能看出離升級還有多遠。
+    h('div', { style: 'margin-top:6px;' }, [
+      h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${hpPct}%` }), h('div', { class: 'bar-label' }, `氣血 ${s.hp}/${s.maxHp}`)]),
+      h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill mp', style: `width:${mpPct}%` }), h('div', { class: 'bar-label' }, `真力 ${s.mp}/${s.maxMp}`)]),
+      h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill exp', style: `width:${expPct}%` }), h('div', { class: 'bar-label' }, `經驗 ${s.exp}/${s.expNeeded}`)]),
     ]),
     statBlock(s.stats),
     h('div', { class: 'nav-tabs' }, [
@@ -142,7 +157,9 @@ function topBar() {
 function navBtn(view, label) {
   return h('button', {
     class: `btn${S.view === view ? ' active' : ''}`,
-    onclick: () => { if (view === 'auction') { openAuction(); } else if (view === 'duel') { openDuel(); } else { S.view = view; render(); } },
+    // 切換到不同畫面時清掉舊的提示訊息(S.error 身兼「錯誤」與「操作成功提示」兩用)——
+    // 不然像是「在商店賣出東西」的提示會一路殘留、錯誤地出現在組隊副本這類完全無關的畫面上。
+    onclick: () => { S.error = ''; if (view === 'auction') { openAuction(); } else if (view === 'duel') { openDuel(); } else { S.view = view; render(); } },
   }, label);
 }
 
@@ -371,7 +388,7 @@ function renderHub() {
       logPanel(),
     ]),
   ]);
-  mount([topBar(), statAllocPanel], [content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  mount([topBar(), statAllocPanel, errorBanner()], [content]);
 }
 
 // ---- 闖蕩中的畫面調度:依 activeCombat / activeVenture 決定顯示內容 ----
@@ -388,7 +405,7 @@ function renderVenture() {
   }
   // 戰鬥中改用精簡標題列(見 combatTopBar 說明):完整屬性列跟導覽按鈕在這裡不需要,
   // 省下的空間讓技能按鈕盡量不用捲動就能點到,不會每打一回合就被畫面重繪推回頂端又要捲一次。
-  mount([s.activeCombat ? combatTopBar() : topBar()], [...content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  mount([s.activeCombat ? combatTopBar() : topBar(), errorBanner()], [...content]);
 }
 
 function renderVentureProgress() {
@@ -610,13 +627,20 @@ function rollQualityInfo(q) {
 // itemLabel 回傳可混合字串與DOM節點的陣列(而非單純字串),才能插入有顏色的品質標籤;
 // 呼叫端一律用陣列形式當作 h() 的 children,不要用樣板字串插值(那樣會把DOM節點轉成無意義文字)。
 function itemLabel(item) {
-  const enhanceText = item.enhanceLevel > 0 ? ` +${item.enhanceLevel}` : '';
+  // enhanceLevel 新制下可能是負數(強化失敗會倒扣),原本只在 >0 時顯示會讓負值被吃掉、
+  // 玩家看不出這件裝備其實已經被強化「弱化」過,改成只要不是 0 就顯示(正負皆標示清楚)。
+  const enhanceText = item.enhanceLevel ? ` ${item.enhanceLevel > 0 ? '+' : ''}${item.enhanceLevel}` : '';
   const q = rollQualityInfo(item.rollQuality);
+  // 耐久度只有武器/防具/副手才有(飾品 maxDurability 為 null,不顯示這段)
+  const durabilityText = item.maxDurability != null ? ` ・耐久${item.durability}/${item.maxDurability}` : '';
+  const isBroken = item.maxDurability != null && item.durability <= 0;
   return [
     `${item.name}${enhanceText}(${itemTierLabel(item.tier)}${item.classType ? `・${classNameZh(item.classType)}` : ''})`,
     ' ',
     h('span', { class: q.className }, `[${q.label}]`),
     ` Lv${item.itemLevel} — ${statsText(item.stats)}`,
+    durabilityText ? h('span', { class: isBroken ? 'durability-broken' : 'hint' }, durabilityText) : null,
+    isBroken ? h('span', { class: 'durability-broken' }, ' (已損壞,無法裝備)') : null,
   ];
 }
 
@@ -629,9 +653,10 @@ function potentialLine(item) {
   return h('div', { style: `color:${POTENTIAL_TIER_COLOR[item.potential.tier]};font-size:13px;` }, `【${POTENTIAL_TIER_LABEL[item.potential.tier]}潛能】${text}`);
 }
 
-// 強化(卷軸)機率表,須與後端 enhanceEngine.js 的 ENHANCE_SUCCESS_RATE 完全一致,純供前端顯示預估成功率用
-const ENHANCE_SUCCESS_RATE = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15];
-const ENHANCE_MAX_LEVEL = 10;
+// 強化(卷軸)常數:須與後端 enhanceEngine.js 完全一致,純供前端顯示文字用。
+// 新制不再是「穩定往上疊、成功率隨等級遞減」,而是每次固定 50/50 機率決定這次是加強還是削弱,
+// 幅度固定 ±3(裝備上每一項現有屬性一起變動),每件裝備最多用滿 5 次。
+const ENHANCE_MAX_USES = 5;
 function slotToScrollId(slot) {
   if (slot === 'weapon') return 'scroll_weapon';
   if (slot === 'armor') return 'scroll_armor';
@@ -644,24 +669,27 @@ function renderEnhanceControls(item) {
   const scrollId = slotToScrollId(item.slot);
   const scroll = consumables.find((c) => c.id === scrollId);
   const cube = consumables.find((c) => c.id === 'cube_potential');
-  const level = item.enhanceLevel || 0;
-  const rate = level < ENHANCE_MAX_LEVEL ? ENHANCE_SUCCESS_RATE[level] : 0;
+  const uses = item.enhanceUses || 0;
+  const usesLeft = ENHANCE_MAX_USES - uses;
+  const netLevel = item.enhanceLevel || 0;
+  const levelText = netLevel >= 0 ? `+${netLevel}` : `${netLevel}`;
   return h('div', { style: 'margin-top:4px;' }, [
     potentialLine(item),
-    level < ENHANCE_MAX_LEVEL
+    usesLeft > 0
       ? h('button', {
           class: 'btn',
-          title: `消耗1張${scroll?.name || ''},目前成功率約${Math.round(rate * 100)}%`,
+          title: `消耗1張${scroll?.name || ''}。50%機率讓裝備「全部現有屬性」一起+3,50%機率一起-3——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差。`,
           onclick: async () => {
             try {
               const r = await api.enhanceItem(item.id, scrollId);
-              S.error = r.success ? `強化成功!提升至 +${r.item.enhanceLevel}` : '強化失敗,卷軸已耗盡。';
+              const netText = r.item.enhanceLevel >= 0 ? `+${r.item.enhanceLevel}` : `${r.item.enhanceLevel}`;
+              S.error = r.success ? `強化成功,這次是加強!目前淨強化 ${netText}(還可使用${r.usesLeft}次)` : `強化失敗,這次是削弱。目前淨強化 ${netText}(還可使用${r.usesLeft}次)`;
               S.state = r.state;
               render();
             } catch (e) { S.error = e.message; render(); }
           },
-        }, `強化(+${level}→+${level + 1},約${Math.round(rate * 100)}%,需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
-      : h('span', { class: 'hint' }, `已達強化上限 +${ENHANCE_MAX_LEVEL}`),
+        }, `強化(目前${levelText},50%+3/50%-3,還可用${usesLeft}/${ENHANCE_MAX_USES}次,需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
+      : h('span', { class: 'hint' }, `已用完全部 ${ENHANCE_MAX_USES} 次強化機會(目前淨強化 ${levelText})`),
     h('button', {
       class: 'btn',
       title: `消耗1顆${cube?.name || ''}`,
@@ -686,7 +714,9 @@ function renderInventory() {
     h('h3', {}, '裝備欄'),
     h('p', { class: 'hint' }, '武器/防具各1格;飾品(戒指/護符/項鍊/徽章)共2格,兩格用途相同、可任意放置,不分種類。'),
     ...Object.entries(s.equipment).map(([slot, item]) =>
-      h('div', { class: 'item-card' }, [
+      // 背包卡片有 rarity-${tier} 決定裝備品階顏色(灰/紫/橘),裝備欄先前漏加這個 class,
+      // 導致同一件裝備一放進裝備欄「顏色就不見了」變回預設白字,跟背包內看到的不一致。
+      h('div', { class: `item-card${item ? ` rarity-${item.tier}` : ''}` }, [
         h('div', {}, item ? [`【${slotLabelZh(slot)}】 `, ...itemLabel(item)] : `【${slotLabelZh(slot)}】(空)`),
         item ? h('button', { class: 'btn', onclick: async () => { await api.unequip(slot); await refreshInvState(); } }, '卸下') : null,
         item ? renderEnhanceControls(item) : null,
@@ -749,7 +779,7 @@ function renderInventory() {
     h('div', {}, [equipPanel, materialsPanel]),
     h('div', {}, [invPanel]),
   ]);
-  mount([topBar()], [content, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  mount([topBar(), errorBanner()], [content]);
 }
 
 async function refreshInvState() {
@@ -762,6 +792,7 @@ async function refreshInvState() {
 // ---- 商店畫面 ----
 async function openShop(shopId) {
   S.shopId = shopId;
+  S.error = ''; // 進入商店前先清掉其他畫面殘留的舊提示訊息
   try {
     S.shopData = await api.getShop(shopId);
   } catch (e) {
@@ -884,7 +915,7 @@ function renderShop() {
     });
   }
 
-  mount([topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null, h('button', { class: 'btn', onclick: () => { S.view = 'hub'; render(); } }, '返回城鎮')]);
+  mount([topBar(), errorBanner()], [panel, h('button', { class: 'btn', onclick: () => { S.error = ''; S.view = 'hub'; render(); } }, '返回城鎮')]);
 }
 
 // ---- 交易所 ----
@@ -911,7 +942,7 @@ function renderAuction() {
     )),
     S.auctionListings.length === 0 ? h('div', { class: 'hint' }, '目前沒有任何上架物品。') : null,
   ]);
-  mount([topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  mount([topBar(), errorBanner()], [panel]);
 }
 
 // ---- 組隊副本畫面 ----
@@ -946,7 +977,7 @@ function renderParty() {
   // 副本戰鬥「進行中」才改用精簡標題列(理由同單人戰鬥,見 combatTopBar)——一旦分出勝負
   // (combat.ended 有值),要換回完整標題列,才能看到導覽分頁,不然畫面卡在精簡列、切不去別的畫面。
   const inActiveCombat = S.party?.combat && !S.party.combat.ended;
-  mount([inActiveCombat ? combatTopBar() : topBar()], [panel, S.error ? h('div', { class: 'error-msg' }, S.error) : null]);
+  mount([inActiveCombat ? combatTopBar() : topBar(), errorBanner()], [panel]);
 }
 
 function renderPartyCombat(combat) {
@@ -1083,10 +1114,11 @@ function renderDuel() {
         h('button', { class: 'btn', onclick: () => { sock.emit('duel:decline'); S.duelPending = null; render(); } }, '婉拒'),
       ]) : null,
     ]) : renderDuelCombat(),
-    S.duelMsg ? h('div', { class: 'error-msg' }, S.duelMsg) : null,
   ]);
-  // 決鬥進行中同樣改用精簡標題列,理由同單人戰鬥/組隊副本
-  mount([S.duel ? combatTopBar() : topBar()], [S.duel ? panel : onlineListPanel, S.duel ? null : panel]);
+  // 決鬥「進行中」才用精簡標題列(理由同單人戰鬥/組隊副本)——一旦分出勝負就換回完整標題列,
+  // 不用等玩家點「返回」才能看到導覽分頁。
+  const inActiveDuel = S.duel && !S.duel.ended;
+  mount([inActiveDuel ? combatTopBar() : topBar(), S.duelMsg ? h('div', { class: 'error-msg', style: 'margin:6px 0 0;' }, S.duelMsg) : null], [S.duel ? panel : onlineListPanel, S.duel ? null : panel]);
 }
 
 function renderDuelCombat() {
@@ -1094,11 +1126,26 @@ function renderDuelCombat() {
   const d = S.duel;
   const aPct = Math.round((d.a.hp / d.a.maxHp) * 100);
   const bPct = Math.round((d.b.hp / d.b.maxHp) * 100);
+  // 判斷是否輪到自己:比對 a/b 裡哪一方是自己(用 username 對照,跟其他地方判斷自己的方式一致),
+  // 再看該方的 userId 是否等於伺服器記錄的 turnUserId。伺服器端才是真正擋非法出手的防線,
+  // 這裡純粹是體驗優化——輪到對方時不顯示按鈕,不用手動去點了才發現「尚未輪到你」的錯誤訊息。
+  const selfSide = d.a.username === S.username ? d.a : d.b.username === S.username ? d.b : null;
+  const isMyTurn = selfSide && d.turnUserId === selfSide.userId;
   return h('div', {}, [
     h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${aPct}%` }), h('div', { class: 'bar-label' }, `${d.a.username} ${d.a.hp}/${d.a.maxHp}`)]),
     h('div', { class: 'bar-bg', style: 'margin-top:4px;' }, [h('div', { class: 'bar-fill enemy', style: `width:${bPct}%` }), h('div', { class: 'bar-label' }, `${d.b.username} ${d.b.hp}/${d.b.maxHp}`)]),
     h('div', { class: 'log-list', style: 'margin-top:10px;' }, d.log.map((l) => h('div', {}, l))),
-    !d.ended ? h('button', { class: 'btn primary', onclick: () => sock.emit('duel:attack') }, '出手') : h('div', { class: 'hint' }, '此戰已分勝負。'),
+    !d.ended
+      ? (isMyTurn
+          ? h('button', { class: 'btn primary', onclick: () => sock.emit('duel:attack') }, '出手')
+          : h('div', { class: 'hint' }, '等待對方出手……'))
+      : h('div', {}, [
+          h('div', { class: 'hint' }, '此戰已分勝負。'),
+          // 分出勝負後要有明確的「返回」按鈕可以按,不然畫面卡在這裡沒有任何可操作項目
+          // (先前只有 stakes:'death' 的生死戰勝負會收到額外事件重置畫面,論勝負的一般決鬥
+          // 完全沒有任何機制清掉 S.duel,玩家會卡在這個結果畫面回不去)。
+          h('button', { class: 'btn primary', style: 'margin-top:8px;', onclick: () => { S.duel = null; render(); } }, '返回'),
+        ]),
   ]);
 }
 
@@ -1157,6 +1204,12 @@ function render() {
 (async function init() {
   if (getToken()) {
     try {
+      // 頁面重新整理/重新開啟分頁時,token 還在 localStorage,但記憶體中的 S.username 會被重置為
+      // 初始值 undefined——先前只定義了 getUsernameFromToken() 這個還原用的輔助函式,卻從未真正
+      // 呼叫它,導致每次重新整理後 S.username 永遠是 undefined。這會讓所有「比對是否為自己」的地方
+      // 都失效,包括組隊副本判斷「哪個成員是你自己」失敗、技能欄因此完全不會顯示(誤以為卡住),
+      // 以及交易所「是否為自己上架」的判斷。在呼叫 enterGame() 之前先還原,修正這整類問題。
+      S.username = getUsernameFromToken();
       await enterGame();
       return;
     } catch {

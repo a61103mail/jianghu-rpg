@@ -8,12 +8,12 @@ import { getMap, getMonster, MAP_ORDER } from '../data/monsterData.js';
 import { getItem, getShop, SHOP_ORDER, getRareRecipes, getPotion, POTION_ORDER, getTierNameZh, GEAR_SLOTS, getEnhanceItem, ENHANCE_ITEM_ORDER } from '../data/itemData.js';
 import { rollMapEvent } from '../data/eventData.js';
 import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen } from '../engine/characterEngine.js';
-import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs } from '../engine/combatEngine.js';
+import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from '../engine/combatEngine.js';
 import { generateCommonGear, craftRareItem, canEquip } from '../engine/itemEngine.js';
 import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
-import { rollEnhance, rollCube, getEnhanceItemAppliesToSlot, ENHANCE_MAX_LEVEL } from '../engine/enhanceEngine.js';
+import { rollEnhance, rollCube, getEnhanceItemAppliesToSlot, ENHANCE_MAX_USES } from '../engine/enhanceEngine.js';
 
 const getSaveStmt = db.prepare('SELECT data FROM saves WHERE user_id = ?');
 const putSaveStmt = db.prepare('INSERT INTO saves (user_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at');
@@ -52,16 +52,30 @@ async function loadSave(userId) {
   if (save.statPoints === undefined) save.statPoints = 0;
   if (!save.currentMapId) save.currentMapId = 'novice_plains';
 
-  // 舊存檔的裝備物件可能沒有 enhanceLevel/potential/rollQuality 欄位(陸續新增的系統),在此補上預設值
+  // 舊存檔的裝備物件可能沒有 enhanceLevel/potential/rollQuality/enhanceUses 欄位(陸續新增的系統),在此補上預設值。
+  // enhanceUses(新制的「已使用次數」計數)舊裝備一律視為 0——等同重新獲得滿額 5 次強化機會,
+  // 屬於對玩家友善的遷移方式(舊制下已經強化過的裝備不會因為改制而被鎖死無法再強化)。
   const backfillEnhanceFields = (item) => {
     if (!item) return item;
     if (item.enhanceLevel === undefined) item.enhanceLevel = 0;
+    if (item.enhanceUses === undefined) item.enhanceUses = 0;
     if (item.potential === undefined) item.potential = null;
     if (item.rollQuality === undefined) item.rollQuality = 0.5; // 舊裝備沒有品質浮動資料,視為「普通」品質顯示
     return item;
   };
   GEAR_SLOTS.forEach((slot) => backfillEnhanceFields(save.equipment[slot]));
   (save.inventory || []).forEach(backfillEnhanceFields);
+
+  // 裝備耐久度歸零:自動從裝備欄卸下(不能穿戴/戰鬥中不再生效),移進背包讓玩家自己決定要不要去
+  // 雜貨店賣掉騰位置——不是留在裝備欄「看起來還穿著但沒作用」,那樣容易讓玩家誤以為是bug。
+  GEAR_SLOTS.forEach((slot) => {
+    const item = save.equipment[slot];
+    if (item && item.maxDurability != null && (item.durability ?? item.maxDurability) <= 0) {
+      save.equipment[slot] = null;
+      save.inventory.push(item);
+      addLog(save, `「${item.name}」耐久度已耗盡,自動卸下,可至雜貨店賣掉回收。`);
+    }
+  });
 
   const stats = computeStats(save);
   if (save.hp === undefined) save.hp = stats.maxHp;
@@ -598,6 +612,7 @@ export default function gameRoutes() {
         const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
         target.hp = Math.max(0, target.hp - amount);
         lines.push(`你施展「${skill.name}」!` + narrateAttack({ attackerName: '你', defenderName: target.name, amount, isCrit }));
+        consumeWeaponDurability(save.equipment);
       } else if (action === 'aoe') {
         lines.push(`你施展「${skill.name}」,席捲全場!`);
         combat.enemies.forEach((target) => {
@@ -606,6 +621,7 @@ export default function gameRoutes() {
           target.hp = Math.max(0, target.hp - amount);
           lines.push(narrateAttack({ attackerName: '你', defenderName: target.name, amount, isCrit }));
         });
+        consumeWeaponDurability(save.equipment);
       } else if (skill.healPct) {
         const amt = Math.round(combat.playerMaxHp * skill.healPct);
         combat.playerHp = Math.min(combat.playerMaxHp, combat.playerHp + amt);
@@ -654,6 +670,7 @@ export default function gameRoutes() {
         const boosted = isChargeRelease ? Math.round(amount * enemy.chargeSkill.dmgMult) : amount;
         const finalAmount = defending ? Math.max(1, Math.ceil(boosted * 0.5)) : boosted;
         combat.playerHp = Math.max(0, combat.playerHp - finalAmount);
+        consumeArmorDurability(save.equipment);
         if (isChargeRelease) {
           lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${defending ? '(防禦大幅減輕了衝擊)' : ''}。`);
         } else {
@@ -783,6 +800,9 @@ export default function gameRoutes() {
     if (idx === -1) return res.status(404).json({ error: '背包內找不到該裝備' });
     const item = save.inventory[idx];
     if (!canEquip(save, item)) return res.status(400).json({ error: '職業不符,無法裝備' });
+    if (item.maxDurability != null && (item.durability ?? item.maxDurability) <= 0) {
+      return res.status(400).json({ error: '此裝備耐久度已耗盡,無法裝備,只能賣給雜貨店回收' });
+    }
 
     let equipSlot = item.slot;
     if (item.slot === 'accessory') {
@@ -903,7 +923,9 @@ export default function gameRoutes() {
     return save.inventory.find((i) => i.id === itemId) || null;
   }
 
-  // 裝備強化:消耗一張卷軸,依目前強化等級判定成功率,成功則 +1 等級並增加固定數值(失敗只損失卷軸,不會摧毀裝備)
+  // 裝備強化:每件裝備最多使用 5 次卷軸,每次全部現有屬性一起 ±3(百分比類屬性為±3個百分點),
+  // 50/50 機率決定這次是加強還是削弱——不是穩定往上疊的系統,是真正有賭注的強化,運氣差可能讓
+  // 裝備比原本更差,運氣好則能大幅超越基礎數值。
   router.post('/equipment/enhance', async (req, res) => {
     const { itemId, scrollId } = req.body || {};
     const save = await loadSave(req.user.userId);
@@ -913,12 +935,13 @@ export default function gameRoutes() {
     if (!scroll || scroll.kind !== 'scroll') return res.status(400).json({ error: '無此強化卷軸' });
     if (!getEnhanceItemAppliesToSlot(scroll.appliesTo, item.slot)) return res.status(400).json({ error: '此卷軸不適用於該裝備部位' });
     if ((save.consumables[scrollId] || 0) < 1) return res.status(400).json({ error: '卷軸數量不足' });
-    if ((item.enhanceLevel || 0) >= ENHANCE_MAX_LEVEL) return res.status(400).json({ error: `已達強化上限 +${ENHANCE_MAX_LEVEL}` });
+    if ((item.enhanceUses || 0) >= ENHANCE_MAX_USES) return res.status(400).json({ error: `已達強化次數上限(${ENHANCE_MAX_USES}/${ENHANCE_MAX_USES})` });
     save.consumables[scrollId] -= 1;
     const result = rollEnhance(item);
-    addLog(save, result.success ? `強化「${item.name}」成功,提升至 +${item.enhanceLevel}!` : `強化「${item.name}」失敗,卷軸已耗盡。`);
+    const levelText = item.enhanceLevel >= 0 ? `+${item.enhanceLevel}` : `${item.enhanceLevel}`;
+    addLog(save, result.success ? `強化「${item.name}」這次是加強!目前淨強化 ${levelText}(還可使用 ${result.usesLeft} 次)。` : `強化「${item.name}」這次是削弱,目前淨強化 ${levelText}(還可使用 ${result.usesLeft} 次)。`);
     await saveGame(req.user.userId, save);
-    res.json({ state: publicState(save), success: result.success, rate: result.rate, item });
+    res.json({ state: publicState(save), success: result.success, usesLeft: result.usesLeft, deltas: result.deltas, item });
   });
 
   // 潛能洗鍊:消耗一顆方塊,沒有潛能就從稀有開始,已有則重洗詞條並有機率升階
@@ -970,6 +993,11 @@ export default function gameRoutes() {
     const save = await loadSave(req.user.userId);
     const idx = save.inventory.findIndex((i) => i.id === itemId);
     if (idx === -1) return res.status(404).json({ error: '背包內找不到該物品(請先卸下裝備)' });
+    const candidateItem = save.inventory[idx];
+    // 耐久度歸零的裝備不能上架賣給其他玩家(等於賣一個報廢品),只能去雜貨店賣掉回收
+    if (candidateItem.maxDurability != null && (candidateItem.durability ?? candidateItem.maxDurability) <= 0) {
+      return res.status(400).json({ error: '此裝備耐久度已耗盡,無法上架交易所,只能賣給雜貨店回收' });
+    }
     const numPrice = Math.round(Number(price));
     if (!numPrice || numPrice <= 0) return res.status(400).json({ error: '請輸入有效的開價' });
     const fee = Math.max(1, Math.round(numPrice * LISTING_FEE_PCT));
