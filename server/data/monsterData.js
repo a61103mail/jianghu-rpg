@@ -52,17 +52,14 @@ export const MONSTERS = {
     id: 'slime', name: '史萊姆', level: 1, hp: 25, atk: 4, def: 1, critRate: 0.05, exp: 8,
     dropTable: [
       { id: 'slime_jelly', kind: 'junk', chance: 0.6, min: 1, max: 2 },
-      { id: 'iron_ore', kind: 'material', shop: 'blacksmith', chance: 0.15, min: 1, max: 1 },
-      { id: 'crystal_shard', kind: 'material', shop: 'magic', chance: 0.15, min: 1, max: 1 },
+      { id: 'gear_material_novice_plains', kind: 'material', chance: 0.3, min: 1, max: 2 },
     ],
   },
   wild_boar: {
     id: 'wild_boar', name: '野豬', level: 3, hp: 45, atk: 7, def: 3, critRate: 0.08, exp: 14,
     dropTable: [
       { id: 'boar_hide', kind: 'junk', chance: 0.55, min: 1, max: 2 },
-      { id: 'rough_leather', kind: 'material', shop: 'leather', chance: 0.2, min: 1, max: 1 },
-      { id: 'feather', kind: 'material', shop: 'leather', chance: 0.15, min: 1, max: 1 },
-      { id: 'holy_water', kind: 'material', shop: 'church', chance: 0.15, min: 1, max: 1 },
+      { id: 'gear_material_novice_plains', kind: 'material', chance: 0.5, min: 1, max: 2 },
     ],
   },
   slime_king: {
@@ -112,14 +109,14 @@ export const MONSTERS = {
     id: 'goblin', name: '哥布林', level: 6, hp: 60, atk: 9, def: 4, critRate: 0.08, exp: 20,
     dropTable: [
       { id: 'goblin_ear', kind: 'junk', chance: 0.6, min: 1, max: 2 },
-      { id: 'iron_ore', kind: 'material', shop: 'blacksmith', chance: 0.2, min: 1, max: 2 },
+      { id: 'gear_material_goblin_forest', kind: 'material', chance: 0.2, min: 1, max: 2 },
     ],
   },
   goblin_archer: {
     id: 'goblin_archer', name: '哥布林弓兵', level: 8, hp: 55, atk: 12, def: 3, critRate: 0.15, exp: 26,
     dropTable: [
       { id: 'goblin_bow_string', kind: 'junk', chance: 0.5, min: 1, max: 2 },
-      { id: 'feather', kind: 'material', shop: 'leather', chance: 0.25, min: 1, max: 2 },
+      { id: 'gear_material_goblin_forest', kind: 'material', chance: 0.25, min: 1, max: 2 },
     ],
   },
   goblin_captain: {
@@ -166,14 +163,14 @@ export const MONSTERS = {
     id: 'stone_bat', name: '石化蝙蝠', level: 11, hp: 90, atk: 16, def: 6, critRate: 0.1, exp: 40,
     dropTable: [
       { id: 'bat_wing', kind: 'junk', chance: 0.55, min: 1, max: 2 },
-      { id: 'crystal_shard', kind: 'material', shop: 'magic', chance: 0.2, min: 1, max: 2 },
+      { id: 'gear_material_stone_mines', kind: 'material', chance: 0.2, min: 1, max: 2 },
     ],
   },
   mine_rat: {
     id: 'mine_rat', name: '礦坑狂鼠', level: 13, hp: 110, atk: 18, def: 7, critRate: 0.1, exp: 48,
     dropTable: [
       { id: 'rat_tail', kind: 'junk', chance: 0.55, min: 1, max: 2 },
-      { id: 'iron_ore', kind: 'material', shop: 'blacksmith', chance: 0.25, min: 2, max: 3 },
+      { id: 'gear_material_stone_mines', kind: 'material', chance: 0.25, min: 2, max: 3 },
     ],
   },
   mine_spider_queen: {
@@ -220,14 +217,14 @@ export const MONSTERS = {
     id: 'swamp_tentacle', name: '沼澤觸手', level: 17, hp: 160, atk: 28, def: 12, critRate: 0.1, exp: 95,
     dropTable: [
       { id: 'tentacle_ooze', kind: 'junk', chance: 0.55, min: 1, max: 2 },
-      { id: 'holy_water', kind: 'material', shop: 'church', chance: 0.2, min: 1, max: 1 },
+      { id: 'gear_material_dark_swamp', kind: 'material', chance: 0.2, min: 1, max: 1 },
     ],
   },
   toxic_toad: {
     id: 'toxic_toad', name: '毒沼蟾蜍', level: 19, hp: 180, atk: 32, def: 14, critRate: 0.1, exp: 110,
     dropTable: [
       { id: 'toad_venom_sac', kind: 'junk', chance: 0.55, min: 1, max: 2 },
-      { id: 'crystal_shard', kind: 'material', shop: 'magic', chance: 0.25, min: 1, max: 2 },
+      { id: 'gear_material_dark_swamp', kind: 'material', chance: 0.25, min: 1, max: 2 },
     ],
   },
   swamp_witch: {
@@ -274,14 +271,14 @@ export const MONSTERS = {
     id: 'ruin_guardian', name: '遺跡守衛', level: 23, hp: 260, atk: 46, def: 20, critRate: 0.12, exp: 180,
     dropTable: [
       { id: 'guardian_plating', kind: 'junk', chance: 0.55, min: 1, max: 2 },
-      { id: 'iron_ore', kind: 'material', shop: 'blacksmith', chance: 0.3, min: 2, max: 4 },
+      { id: 'gear_material_ruined_borderlands', kind: 'material', chance: 0.3, min: 2, max: 4 },
     ],
   },
   shadow_blade: {
     id: 'shadow_blade', name: '暗影劍士', level: 25, hp: 240, atk: 52, def: 18, critRate: 0.2, exp: 210,
     dropTable: [
       { id: 'shadow_fragment', kind: 'junk', chance: 0.55, min: 1, max: 2 },
-      { id: 'feather', kind: 'material', shop: 'leather', chance: 0.3, min: 2, max: 4 },
+      { id: 'gear_material_ruined_borderlands', kind: 'material', chance: 0.3, min: 2, max: 4 },
     ],
   },
   fallen_knight: {

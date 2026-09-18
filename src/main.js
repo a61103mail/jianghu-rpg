@@ -4,10 +4,18 @@ import { connectSocket, getSocket, disconnectSocket } from './socket.js';
 
 const app = document.getElementById('app');
 
-const SHOP_NAMES = { blacksmith: '鐵匠鋪', leather: '皮革店', magic: '法術店', church: '教堂', general: '雜貨店' };
+const SHOP_NAMES = { blacksmith: '鐵匠鋪', leather: '皮革店', magic: '法術店', church: '黑市', general: '雜貨店' };
 const SHOP_ORDER = ['blacksmith', 'leather', 'magic', 'church', 'general'];
-const ITEM_TIER_LABEL = { common: '普通', rare: '稀有', epic: '超稀有', elite_set: '菁英套裝', trueboss_set: '真王套裝' };
-function itemTierLabel(tier) { return ITEM_TIER_LABEL[tier] || '普通'; }
+// common:打怪隨機掉落的普通裝備(itemEngine.js generateCommonGear 固定寫死此字面值)。
+// novice_plains ~ ruined_borderlands:商店配方的基本裝備,依地圖成長(見 itemData.js)。
+// elite_set / trueboss_set:套裝配方。三者是同一個 tier 欄位、三種互不重疊的來源。
+const ITEM_TIER_LABEL = {
+  common: '普通',
+  novice_plains: '新手平原', goblin_forest: '哥布林森林', stone_mines: '石化礦坑',
+  dark_swamp: '幽暗沼澤', ruined_borderlands: '遺跡邊境',
+  elite_set: '菁英套裝', trueboss_set: '真王套裝',
+};
+function itemTierLabel(tier) { return ITEM_TIER_LABEL[tier] || tier; }
 
 // 藥水按鈕文字統一格式,一定要帶回復量——先前只顯示名稱+持有數量,玩家完全不知道這瓶到底回多少,
 // 等於盲買盲用。4個使用藥水的地方(城鎮/戰鬥面板/王警示面板/組隊副本)都共用這個函式。
@@ -1124,8 +1132,12 @@ async function openShop(shopId) {
   render();
 }
 
-// 商店配方稀有度/套裝標籤的顏色,一般配方(common/rare/epic)跟套裝配方(elite_set/trueboss_set)共用同一份色票
-const TIER_COLOR = { common: '#b0b0b0', rare: '#a855f7', epic: '#f59e0b', elite_set: '#22d3ee', trueboss_set: '#ef4444' };
+// 商店配方稀有度/套裝標籤的顏色,基本裝備(依地圖分5階)跟套裝配方(elite_set/trueboss_set)共用同一份色票
+const TIER_COLOR = {
+  novice_plains: '#b0b0b0', goblin_forest: '#4ade80', stone_mines: '#38bdf8',
+  dark_swamp: '#a855f7', ruined_borderlands: '#f59e0b',
+  elite_set: '#22d3ee', trueboss_set: '#ef4444',
+};
 
 // 商店配方卡片:一般配方與套裝配方共用同一種呈現方式(名稱/金幣/材料需求/屬性/製作按鈕)。
 // 套裝配方額外帶 setTierDescriptions 時,顯示「📖 套裝效果」圖示按鈕彈出完整效果說明(仿強化圖示),
@@ -1309,10 +1321,12 @@ function renderShop() {
     }
 
     if (S.shopCategoryFilter === 'normal') {
-      ['common', 'rare', 'epic'].forEach((tier) => {
-        const tierRecipes = normalRecipesForSlot.filter((r) => r.tier === tier);
+      // tier 欄位現在存地圖id(依地圖成長,見 itemData.js),用 S.state.maps 的順序逐一顯示——
+      // 每個部位在每張地圖只有一張配方,5張地圖的卡片並排顯示(card-grid 自動換行),不用再多一層分頁籤。
+      (S.state.maps || []).map((m) => m.id).forEach((mapId) => {
+        const tierRecipes = normalRecipesForSlot.filter((r) => r.tier === mapId);
         if (tierRecipes.length === 0) return;
-        panel.appendChild(h('div', { style: `color:${TIER_COLOR[tier]};font-weight:bold;margin-top:8px;` }, `【${tierRecipes[0].tierLabel}】`));
+        panel.appendChild(h('div', { style: `color:${TIER_COLOR[mapId]};font-weight:bold;margin-top:8px;` }, `【${tierRecipes[0].tierLabel}】`));
         panel.appendChild(h('div', { class: 'card-grid' }, tierRecipes.map((r) => renderRecipeCard(shopId, r))));
       });
     } else if (S.shopCategoryFilter === 'set') {

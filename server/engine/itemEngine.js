@@ -138,9 +138,11 @@ export function generateCommonGear(monsterLevel) {
 }
 
 // 稀有裝備:僅能透過商店配方製作,固定對應該商店的職業(見 RARE_RECIPES / SHOP_TO_CLASS)
-// tier 取自配方本身(common/rare/epic),itemLevel 僅作展示用參考數字(不設等級門檻,三階都統一用同一套基準對照)
-// 配方裡的 statBonus 是「基準值」,實際打造出來的數值一樣會套用浮動,同一張配方每次做出來品質可能不同。
-const TIER_DISPLAY_LEVEL = { common: 8, rare: 16, epic: 26 };
+// tier 取自配方本身(地圖id,依地圖成長,見 itemData.js),itemLevel 僅作展示用參考數字
+// (不設等級門檻,只要材料+金幣足夠即可製作)。
+// 數字取自各地圖等級範圍上緣(見 monsterData.js MAP_ORDER 對應的 levelRange),讓裝備欄位顯示
+// 的數字能隨地圖遞增,不會 5 張地圖做出來的裝備全部都顯示同一個等級。
+const TIER_DISPLAY_LEVEL = { novice_plains: 6, goblin_forest: 11, stone_mines: 17, dark_swamp: 23, ruined_borderlands: 29 };
 export function craftRareItem(shopId, recipe) {
   const rolls = [];
   const stats = {};

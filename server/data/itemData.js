@@ -1,6 +1,8 @@
 // 物品/商店資料(奇幻練功MMO):怪物只掉「可販售雜物」與「製作素材」,金幣完全來自把雜物賣給雜貨店。
 // 裝備分兩軌:普通裝備只能靠打怪掉落(itemEngine.js 依怪物等級隨機生成),
 // 稀有裝備「只能」靠對應商店的製作配方取得(消耗素材+金幣+等級門檻),兩者不重疊。
+import { MAP_ORDER } from './monsterData.js';
+
 export const ITEMS = {
   // ---- 雜物(僅能在雜貨店回收賣錢,無其他用途)----
   slime_jelly: { id: 'slime_jelly', name: '史萊姆黏液', kind: 'junk', basePrice: 3 },
@@ -14,12 +16,22 @@ export const ITEMS = {
   guardian_plating: { id: 'guardian_plating', name: '守衛裝甲碎片', kind: 'junk', basePrice: 45 },
   shadow_fragment: { id: 'shadow_fragment', name: '暗影碎片', kind: 'junk', basePrice: 50 },
 
-  // ---- 一般製作素材(各對應一間裝備商店,較常見;也可直接賣給雜貨店換錢,由玩家自行決定要留著做裝備還是換現金)----
+  // ---- 一般製作素材(舊制,依職業商店分類;仍可打怪掉落+賣給雜貨店換錢,但已不再是任何裝備配方
+  // 的材料,基本裝備改用下方「地圖鍛材」製作,見 GEAR_MATERIAL_BY_MAP)----
   iron_ore: { id: 'iron_ore', name: '鐵礦', kind: 'material', shop: 'blacksmith', basePrice: 6 },
   rough_leather: { id: 'rough_leather', name: '粗製獸皮', kind: 'material', shop: 'leather', basePrice: 6 },
   feather: { id: 'feather', name: '羽毛', kind: 'material', shop: 'leather', basePrice: 6 },
   crystal_shard: { id: 'crystal_shard', name: '魔力碎晶', kind: 'material', shop: 'magic', basePrice: 9 },
   holy_water: { id: 'holy_water', name: '淬毒液', kind: 'material', shop: 'church', basePrice: 10 },
+
+  // ---- 地圖鍛材(基本裝備製作專用):每張地圖各自專屬、互不相通,不分職業商店,四間商店都用
+  // 同一種地圖鍛材製作各自的武器/防具/副手/飾品——呼應「裝備要隨著地圖持續成長」,材料取得
+  // 難度也隨地圖遞增(見 monsterData.js 各地圖一般小怪的掉落表,以及下方 buildShopRecipes)。
+  gear_material_novice_plains: { id: 'gear_material_novice_plains', name: '新手平原鍛材', kind: 'material', basePrice: 6 },
+  gear_material_goblin_forest: { id: 'gear_material_goblin_forest', name: '哥布林森林鍛材', kind: 'material', basePrice: 11 },
+  gear_material_stone_mines: { id: 'gear_material_stone_mines', name: '石化礦坑鍛材', kind: 'material', basePrice: 18 },
+  gear_material_dark_swamp: { id: 'gear_material_dark_swamp', name: '幽暗沼澤鍛材', kind: 'material', basePrice: 27 },
+  gear_material_ruined_borderlands: { id: 'gear_material_ruined_borderlands', name: '遺跡邊境鍛材', kind: 'material', basePrice: 38 },
 
   // ---- 稀有素材(僅小王/大王掉落,製作稀有/超稀有裝備專用;賣給雜貨店的價格遠高於一般素材,反映其稀有度)----
   slime_core: { id: 'slime_core', name: '史萊姆核心', kind: 'rare_material', shop: 'magic', basePrice: 20 },
@@ -38,7 +50,9 @@ export const ITEMS = {
   // 從單純「刷完全部單人大王」再往上加一道「你也要真的組隊打過王」的門檻,讓組隊本身有不可取代的價值。
   party_seal: { id: 'party_seal', name: '團隊戰印', kind: 'party_material', basePrice: 150 },
 
-  // ---- 套裝製作素材(每張地圖各自專屬,菁英/真王擊敗保底掉落1~3個,不會出現0個的坑爹情況)----
+  // ---- 套裝製作素材(每張地圖各自專屬;套裝終究強於一般鍛材裝備,取得難度也該更高,因此菁英/真王
+  // 掉落「不保底」0~2/0~3個,機率上比一般鍛材(保底1~3個)更吝嗇——理論上套裝比一般裝備更強,
+  // 材料取得量就該反過來比一般鍛材少,而不是套裝材料掉得比一般鍛材還大方)----
   // 菁英碎片用於在對應商店製作該地圖的「菁英套裝」(2部位:武器+防具);
   // 真王結晶用於製作該地圖的「真王套裝」(4部位:武器+防具+副手+飾品),見 setGearData.js 的配方定義。
   elite_shard_novice_plains: { id: 'elite_shard_novice_plains', name: '新手平原菁英碎片', kind: 'set_material', basePrice: 60 },
@@ -81,54 +95,54 @@ export const OFFHAND_TYPE_BY_CLASS = {
 export const ARMOR_NAMES = ['布甲', '皮甲', '鎖甲', '板甲'];
 export const ACCESSORY_NAMES = ['護符', '戒指', '項鍊', '徽章'];
 
-// 稀有裝備配方(僅能在對應商店製作,無法透過打怪取得,不設等級門檻——只要材料+金幣足夠就能做)。
-// 每間商店、每個裝備部位都有三個階層:普通(只需一般素材,量少價廉,隨時可做)、
-// 稀有(需搭配小王/大王掉落的稀有素材)、超稀有(需搭配更高階或更多稀有素材,屬性最強)。
-// 三階數值統一用同一參考基準計算(見下方 TIER_MULT),只靠倍率拉開差距,
-// 材料取得難度則完全反映在「要打贏哪隻小王/大王」與「材料需求量」上,兩者分開設計避免混淆。
-//
-// 重要:稀有/超稀有階的「稀有素材」需求對四間商店一律相同(見 RARE_TIER_BOSS_MATS / EPIC_TIER_BOSS_MATS)——
-// 打贏哪隻王對所有職業都一樣重要,不會出現「戰士打贏第一章大王有用,盜賊打贏卻完全用不到」這種不公平狀況。
-// 各商店真正的差異只在於各自的「一般素材」(鐵礦/獸皮羽毛/魔力碎晶/淬毒液)與裝備名稱、屬性類型(atk/matk)。
-const RARE_TIER_BOSS_MATS = { slime_core: 1, boar_fang: 1 }; // 第一章(新手平原)小王+大王,稀有階入門門檻
-const EPIC_TIER_BOSS_MATS = {
-  captain_insignia: 1, chieftain_totem: 1, spider_silk_gland: 1, golem_core: 1,
-  witch_charm: 1, drake_scale: 1, knight_emblem: 1, king_crown_shard: 1,
-  party_seal: 2, // 額外要求組隊限定素材——超稀有裝備不能只靠單刷全部大王湊齊,也要真的組過隊打贏王
-}; // 第二~五章剩下全部小王+大王,超稀有階代表「打完整個遊戲」的終極門檻
+// 基本裝備配方(僅能在對應商店製作,無法透過打怪取得,不設等級門檻——只要材料+金幣足夠就能做)。
+// 每間商店、每個裝備部位都對應 5 張地圖各一階,呼應「裝備要隨著地圖持續成長」——玩家推進到
+// 哪張地圖,就能用該地圖打怪掉的鍛材做出對應強度的新裝備,不會出現「打到第五章卻還在用第一章
+// 配方」的窘境。材料採用 GEAR_MATERIAL_QTY_BY_MAP(每張地圖各自的地圖鍛材,互不相通),
+// 金幣需求見 GEAR_GOLD_BY_MAP,兩者皆隨地圖序位遞增。數值強度低於同地圖的菁英/真王套裝,
+// 套裝仍是打贏王才能取得的頂級裝備,基本裝備則是「持續刷小怪就能穩定量產」的中階裝備。
+const GEAR_MATERIAL_QTY_BY_MAP = { novice_plains: 5, goblin_forest: 8, stone_mines: 12, dark_swamp: 16, ruined_borderlands: 20 };
+const GEAR_GOLD_BY_MAP = { novice_plains: 30, goblin_forest: 90, stone_mines: 200, dark_swamp: 380, ruined_borderlands: 650 };
 const TIER_STATS = {
-  common: { weaponAtk: 20, armorDef: 14, armorHp: 46, accCritPct: 2.8, accHp: 28, accDex: 14 },
-  rare: { weaponAtk: 31, armorDef: 22, armorHp: 73, accCritPct: 4.4, accHp: 44, accDex: 22 },
-  epic: { weaponAtk: 47, armorDef: 34, armorHp: 109, accCritPct: 6.6, accHp: 66, accDex: 34 },
+  novice_plains: { weaponAtk: 28, armorDef: 20, armorHp: 65, accCritPct: 3, accHp: 38, accDex: 17 },
+  goblin_forest: { weaponAtk: 45, armorDef: 32, armorHp: 104, accCritPct: 4.8, accHp: 61, accDex: 27 },
+  stone_mines: { weaponAtk: 67, armorDef: 48, armorHp: 156, accCritPct: 7.2, accHp: 91, accDex: 41 },
+  dark_swamp: { weaponAtk: 95, armorDef: 68, armorHp: 221, accCritPct: 10.2, accHp: 129, accDex: 58 },
+  ruined_borderlands: { weaponAtk: 129, armorDef: 92, armorHp: 299, accCritPct: 13.8, accHp: 175, accDex: 78 },
 };
-// 副手三階數值:生存向(氣血/防禦約為防具一半)+ 少量攻擊值(約武器三分之一)。
-// 職業特色屬性各自用途:blockPct(戰士格擋率)、evasionPct(弓箭手迴避率)都是隨階層遞增的
-// 百分點加成;法師改用固定 50% 真氣減傷(不因強化/潛能/套裝疊加,三階數值皆相同,見
-// characterEngine.js——固定生效判斷只看 classId,這裡的數值僅供裝備欄顯示用);盜賊的副手
-// 不給任何防禦手段,改給 critDamagePct(會心傷害%,疊加在基礎1.6倍會心倍率上,見 combatEngine.js)。
+// 副手五階數值:生存向(氣血/防禦約為防具一半)+ 少量攻擊值(約武器三分之一)。
+// 職業特色屬性各自用途:blockPct(戰士格擋率)、evasionPct(弓箭手迴避率)、critDamagePct(盜賊
+// 會心傷害%)都是隨地圖遞增的百分點加成;法師改用固定 50% 真氣減傷(不因強化/潛能/套裝疊加,
+// 五階數值皆相同,見 characterEngine.js——固定生效判斷只看 classId,這裡的數值僅供裝備欄顯示用)。
 const OFFHAND_TIER_STATS = {
-  common: { hp: 23, def: 7, atk: 7, blockPct: 3, evasionPct: 3, magicReductionPct: 50, critDamagePct: 15 },
-  rare: { hp: 37, def: 11, atk: 10, blockPct: 5, evasionPct: 5, magicReductionPct: 50, critDamagePct: 25 },
-  epic: { hp: 55, def: 17, atk: 16, blockPct: 7, evasionPct: 7, magicReductionPct: 50, critDamagePct: 38 },
+  novice_plains: { hp: 25, def: 8, atk: 8, blockPct: 3, evasionPct: 3, magicReductionPct: 50, critDamagePct: 15 },
+  goblin_forest: { hp: 40, def: 13, atk: 13, blockPct: 4.8, evasionPct: 4.8, magicReductionPct: 50, critDamagePct: 24 },
+  stone_mines: { hp: 60, def: 19, atk: 19, blockPct: 7.2, evasionPct: 7.2, magicReductionPct: 50, critDamagePct: 36 },
+  dark_swamp: { hp: 85, def: 27, atk: 27, blockPct: 10.2, evasionPct: 10.2, magicReductionPct: 50, critDamagePct: 51 },
+  ruined_borderlands: { hp: 115, def: 37, atk: 37, blockPct: 13.8, evasionPct: 13.8, magicReductionPct: 50, critDamagePct: 69 },
 };
-const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有', elite_set: '菁英套裝', trueboss_set: '真王套裝' };
+const TIER_NAME_ZH = {
+  novice_plains: '新手平原', goblin_forest: '哥布林森林', stone_mines: '石化礦坑',
+  dark_swamp: '幽暗沼澤', ruined_borderlands: '遺跡邊境',
+  elite_set: '菁英套裝', trueboss_set: '真王套裝',
+};
 
-// 依商店的攻擊屬性(atk/matk)與部位,組出五個部位×三階層共 15 張配方(武器/防具/副手各1張+飾品2張)。
-// 飾品的兩張配方(acc1會心向/acc2氣血向)只是「不同屬性傾向的飾品」,不代表兩個不同格子——
-// slot 統一用通用的 accessory,實際要放飾品一或飾品二由玩家裝備時自己選。
-function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold, offhandNames) {
+// 依商店的攻擊屬性(atk/matk)與部位,組出五個部位×五張地圖共 30 張配方(武器/防具/副手各1張+飾品3張)。
+// 飾品的三張配方(acc1會心向/acc2氣血向/acc3敏捷向)只是「不同屬性傾向的飾品」,不代表三個不同
+// 格子——slot 統一用通用的 accessory,實際要放飾品一或飾品二由玩家裝備時自己選。
+function buildShopRecipes(shopId, atkKey, namesByMap, offhandNamesByMap) {
   const recipes = [];
   const isMage = shopId === 'magic';
   const isArcher = shopId === 'leather';
   const isRogue = shopId === 'church';
-  ['common', 'rare', 'epic'].forEach((tier) => {
-    const s = TIER_STATS[tier];
-    const o = OFFHAND_TIER_STATS[tier];
-    const n = names[tier];
-    const materials = tierMaterials[tier];
-    const gold = tierGold[tier];
-    recipes.push({ id: `${shopId}_weapon_${tier}`, name: n.weapon, slot: 'weapon', tier, gold, materials, statBonus: { [atkKey]: s.weaponAtk } });
-    recipes.push({ id: `${shopId}_armor_${tier}`, name: n.armor, slot: 'armor', tier, gold, materials, statBonus: { def: s.armorDef, hp: s.armorHp } });
+  MAP_ORDER.forEach((mapId) => {
+    const s = TIER_STATS[mapId];
+    const o = OFFHAND_TIER_STATS[mapId];
+    const n = namesByMap[mapId];
+    const materials = { [`gear_material_${mapId}`]: GEAR_MATERIAL_QTY_BY_MAP[mapId] };
+    const gold = GEAR_GOLD_BY_MAP[mapId];
+    recipes.push({ id: `${shopId}_weapon_${mapId}`, name: n.weapon, slot: 'weapon', tier: mapId, gold, materials, statBonus: { [atkKey]: s.weaponAtk } });
+    recipes.push({ id: `${shopId}_armor_${mapId}`, name: n.armor, slot: 'armor', tier: mapId, gold, materials, statBonus: { def: s.armorDef, hp: s.armorHp } });
     let offhandStatBonus;
     if (isMage) {
       offhandStatBonus = { hp: o.hp, [atkKey]: o.atk, magicDamageReductionPct: o.magicReductionPct };
@@ -139,10 +153,10 @@ function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold, offhan
     } else {
       offhandStatBonus = { hp: o.hp, def: o.def, [atkKey]: o.atk, blockRatePct: o.blockPct };
     }
-    recipes.push({ id: `${shopId}_offhand_${tier}`, name: offhandNames[tier], slot: 'offhand', tier, gold, materials, statBonus: offhandStatBonus });
-    recipes.push({ id: `${shopId}_accessory1_${tier}`, name: n.acc1, slot: 'accessory', tier, gold, materials, statBonus: { critRatePct: s.accCritPct } });
-    recipes.push({ id: `${shopId}_accessory2_${tier}`, name: n.acc2, slot: 'accessory', tier, gold, materials, statBonus: { hp: s.accHp } });
-    recipes.push({ id: `${shopId}_accessory3_${tier}`, name: n.acc3, slot: 'accessory', tier, gold, materials, statBonus: { dex: s.accDex } });
+    recipes.push({ id: `${shopId}_offhand_${mapId}`, name: offhandNamesByMap[mapId], slot: 'offhand', tier: mapId, gold, materials, statBonus: offhandStatBonus });
+    recipes.push({ id: `${shopId}_accessory1_${mapId}`, name: n.acc1, slot: 'accessory', tier: mapId, gold, materials, statBonus: { critRatePct: s.accCritPct } });
+    recipes.push({ id: `${shopId}_accessory2_${mapId}`, name: n.acc2, slot: 'accessory', tier: mapId, gold, materials, statBonus: { hp: s.accHp } });
+    recipes.push({ id: `${shopId}_accessory3_${mapId}`, name: n.acc3, slot: 'accessory', tier: mapId, gold, materials, statBonus: { dex: s.accDex } });
   });
   return recipes;
 }
@@ -151,62 +165,46 @@ export const RARE_RECIPES = {
   blacksmith: buildShopRecipes(
     'blacksmith', 'atk',
     {
-      common: { weapon: '精鐵劍', armor: '精鐵鎧甲', acc1: '精鐵護符', acc2: '力量護腕', acc3: '精鐵敏捷環' },
-      rare: { weapon: '精鋼劍', armor: '鋼骨鎧甲', acc1: '猛豬獠牙墜', acc2: '蠻力腰帶', acc3: '疾風獠牙墜' },
-      epic: { weapon: '巨人斷魂劍', armor: '磐岩王者重甲', acc1: '騎士徽記戒', acc2: '巨人之心護環', acc3: '騎士疾影靴' },
+      novice_plains: { weapon: '精鐵劍', armor: '精鐵鎧甲', acc1: '精鐵護符', acc2: '力量護腕', acc3: '精鐵敏捷環' },
+      goblin_forest: { weapon: '哥布林戰斧', armor: '哥布林鎧甲', acc1: '哥布林牙墜', acc2: '蠻力腰帶', acc3: '疾風牙墜' },
+      stone_mines: { weapon: '磐岩巨劍', armor: '磐岩重甲', acc1: '磐岩戒', acc2: '巨力腰帶', acc3: '磐岩敏捷環' },
+      dark_swamp: { weapon: '沼澤蝕鋼劍', armor: '沼澤蝕鋼甲', acc1: '蝕鋼戒', acc2: '蝕鋼腰帶', acc3: '沼澤疾影環' },
+      ruined_borderlands: { weapon: '遺跡王者劍', armor: '遺跡王者鎧', acc1: '王者戒', acc2: '王者護環', acc3: '王者疾影環' },
     },
-    {
-      common: { iron_ore: 5 },
-      rare: { ...RARE_TIER_BOSS_MATS, iron_ore: 6 },
-      epic: { ...EPIC_TIER_BOSS_MATS, iron_ore: 12 },
-    },
-    { common: 25, rare: 150, epic: 700 },
-    { common: '精鐵小圓盾', rare: '鋼骨鳶盾', epic: '巨人斷魂塔盾' }
+    { novice_plains: '精鐵小圓盾', goblin_forest: '哥布林戰盾', stone_mines: '磐岩塔盾', dark_swamp: '沼澤蝕鋼盾', ruined_borderlands: '遺跡王者盾' }
   ),
   leather: buildShopRecipes(
     'leather', 'atk',
     {
-      common: { weapon: '硬化短弓', armor: '硬化皮甲', acc1: '羽紋護符', acc2: '敏捷手環', acc3: '疾行足環' },
-      rare: { weapon: '隊長之弓', armor: '蛛絲輕甲', acc1: '隊長徽記戒', acc2: '迅捷腰帶', acc3: '獵風之靴' },
-      epic: { weapon: '蛛后長弓', armor: '蛛絲聖鎧', acc1: '蛛絲護符', acc2: '疾風之羽環', acc3: '疾影蛛絲靴' },
+      novice_plains: { weapon: '硬化短弓', armor: '硬化皮甲', acc1: '羽紋護符', acc2: '敏捷手環', acc3: '疾行足環' },
+      goblin_forest: { weapon: '哥布林獵弓', armor: '哥布林皮甲', acc1: '哥布林徽記戒', acc2: '迅捷腰帶', acc3: '獵風之靴' },
+      stone_mines: { weapon: '磐岩複合弓', armor: '磐岩輕甲', acc1: '磐岩敏捷戒', acc2: '磐岩腰帶', acc3: '磐岩迅步環' },
+      dark_swamp: { weapon: '沼澤毒牙弓', armor: '沼澤鱗甲', acc1: '毒牙戒', acc2: '沼澤迅捷環', acc3: '沼澤影靴' },
+      ruined_borderlands: { weapon: '遺跡疾風弓', armor: '遺跡遊俠甲', acc1: '遊俠戒', acc2: '遊俠迅捷環', acc3: '遊俠疾影靴' },
     },
-    {
-      common: { rough_leather: 3, feather: 2 },
-      rare: { ...RARE_TIER_BOSS_MATS, rough_leather: 4, feather: 3 },
-      epic: { ...EPIC_TIER_BOSS_MATS, rough_leather: 8, feather: 6 },
-    },
-    { common: 25, rare: 150, epic: 700 },
-    { common: '硬化箭袋', rare: '隊長強化弓弦', epic: '蛛絲獵人護臂' }
+    { novice_plains: '硬化箭袋', goblin_forest: '哥布林強化弓弦', stone_mines: '磐岩強化箭袋', dark_swamp: '沼澤毒牙箭袋', ruined_borderlands: '遺跡遊俠箭袋' }
   ),
   magic: buildShopRecipes(
     'magic', 'matk',
     {
-      common: { weapon: '木杖', armor: '學徒法袍', acc1: '碎晶護符', acc2: '魔力手環', acc3: '碎晶敏捷戒' },
-      rare: { weapon: '史萊姆核心法杖', armor: '圖騰法袍', acc1: '史萊姆核心戒', acc2: '圖騰腰帶', acc3: '核心迅步環' },
-      epic: { weapon: '女巫魔導書', armor: '酋長聖法袍', acc1: '女巫法冠', acc2: '酋長圖騰項鍊', acc3: '女巫疾影靴' },
+      novice_plains: { weapon: '木杖', armor: '學徒法袍', acc1: '碎晶護符', acc2: '魔力手環', acc3: '碎晶敏捷戒' },
+      goblin_forest: { weapon: '哥布林法杖', armor: '哥布林法袍', acc1: '秘紋戒', acc2: '秘紋腰帶', acc3: '秘紋迅步環' },
+      stone_mines: { weapon: '磐岩法杖', armor: '磐岩法袍', acc1: '磐岩秘紋戒', acc2: '磐岩魔力環', acc3: '磐岩迅步環' },
+      dark_swamp: { weapon: '沼澤邪杖', armor: '沼澤邪袍', acc1: '邪紋戒', acc2: '沼澤魔力環', acc3: '沼澤迅影環' },
+      ruined_borderlands: { weapon: '遺跡神皇杖', armor: '遺跡神皇袍', acc1: '神皇秘紋戒', acc2: '神皇魔力環', acc3: '神皇迅影靴' },
     },
-    {
-      common: { crystal_shard: 5 },
-      rare: { ...RARE_TIER_BOSS_MATS, crystal_shard: 6 },
-      epic: { ...EPIC_TIER_BOSS_MATS, crystal_shard: 12 },
-    },
-    { common: 25, rare: 150, epic: 700 },
-    { common: '魔導書副冊', rare: '史萊姆秘紋法印', epic: '女巫奧術聖典' }
+    { novice_plains: '魔導書副冊', goblin_forest: '哥布林秘紋法印', stone_mines: '磐岩秘紋法印', dark_swamp: '沼澤邪紋法印', ruined_borderlands: '神皇奧術聖典' }
   ),
   church: buildShopRecipes(
     'church', 'atk',
     {
-      common: { weapon: '淬毒匕首', armor: '夜行輕甲', acc1: '暗影護符', acc2: '敏捷手環', acc3: '暗影疾行環' },
-      rare: { weapon: '淬毒雙刃', armor: '暗殺輕甲', acc1: '淬毒戒指', acc2: '夜行者腰帶', acc3: '暗影迅捷靴' },
-      epic: { weapon: '龍鱗噬魂爪', armor: '龍鱗夜行服', acc1: '王冠暗影珠', acc2: '王冠疾影環', acc3: '龍鱗無聲靴' },
+      novice_plains: { weapon: '淬毒匕首', armor: '夜行輕甲', acc1: '暗影護符', acc2: '敏捷手環', acc3: '暗影疾行環' },
+      goblin_forest: { weapon: '哥布林淬毒爪', armor: '哥布林夜行服', acc1: '哥布林暗影戒', acc2: '夜行腰帶', acc3: '夜行疾影環' },
+      stone_mines: { weapon: '磐岩淬毒爪', armor: '磐岩夜行服', acc1: '磐岩暗影戒', acc2: '磐岩夜行環', acc3: '磐岩疾影靴' },
+      dark_swamp: { weapon: '沼澤淬毒爪', armor: '沼澤夜行服', acc1: '沼澤暗影戒', acc2: '沼澤夜行環', acc3: '沼澤疾影靴' },
+      ruined_borderlands: { weapon: '遺跡噬魂爪', armor: '遺跡夜行服', acc1: '暗影王冠戒', acc2: '王冠疾影環', acc3: '王冠無聲靴' },
     },
-    {
-      common: { holy_water: 5 },
-      rare: { ...RARE_TIER_BOSS_MATS, holy_water: 8 },
-      epic: { ...EPIC_TIER_BOSS_MATS, holy_water: 12 },
-    },
-    { common: 25, rare: 150, epic: 700 },
-    { common: '淬毒暗器囊', rare: '影襲徽記', epic: '龍鱗死神低語' }
+    { novice_plains: '淬毒暗器囊', goblin_forest: '哥布林毒囊', stone_mines: '磐岩毒囊', dark_swamp: '沼澤劇毒囊', ruined_borderlands: '死神低語' }
   ),
 };
 

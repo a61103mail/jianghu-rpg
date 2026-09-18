@@ -190,9 +190,16 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 .log-list { height: clamp(120px, 22vh, 220px); max-height: clamp(120px, 22vh, 220px); overflow-y: auto; font-size: 13px; color: var(--ink-dim); display: flex; flex-direction: column-reverse; gap: 3px; min-height: 0; flex-shrink: 0; }
 
 .item-card { background: #241f16; border: 1px solid var(--panel-border); border-radius: 4px; padding: 8px 10px; margin-bottom: 6px; font-size: 14px; }
+/* common/rare/epic 保留給玩家手上可能還留著的舊資料(裝備地圖化改版前製作/掉落的裝備),
+   novice_plains ~ ruined_borderlands 是改版後「依地圖成長」的新基本裝備 5 階。 */
 .item-card.rarity-common { color: #b0b0b0; }
 .item-card.rarity-rare { color: #a855f7; }
 .item-card.rarity-epic { color: #f59e0b; }
+.item-card.rarity-novice_plains { color: #b0b0b0; }
+.item-card.rarity-goblin_forest { color: #4ade80; }
+.item-card.rarity-stone_mines { color: #38bdf8; }
+.item-card.rarity-dark_swamp { color: #a855f7; }
+.item-card.rarity-ruined_borderlands { color: #f59e0b; }
 .item-card.rarity-elite_set { color: #22d3ee; }
 .item-card.rarity-trueboss_set { color: #ef4444; font-weight: bold; }
 
@@ -202,6 +209,11 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 .equip-slot.rarity-common { color: #b0b0b0; }
 .equip-slot.rarity-rare { color: #a855f7; }
 .equip-slot.rarity-epic { color: #f59e0b; }
+.equip-slot.rarity-novice_plains { color: #b0b0b0; }
+.equip-slot.rarity-goblin_forest { color: #4ade80; }
+.equip-slot.rarity-stone_mines { color: #38bdf8; }
+.equip-slot.rarity-dark_swamp { color: #a855f7; }
+.equip-slot.rarity-ruined_borderlands { color: #f59e0b; }
 .equip-slot.rarity-elite_set { color: #22d3ee; }
 .equip-slot.rarity-trueboss_set { color: #ef4444; font-weight: bold; }
 .equip-slot-name { flex: 1; font-size: 13px; margin: 4px 0; word-break: break-all; }
