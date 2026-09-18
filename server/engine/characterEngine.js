@@ -142,11 +142,14 @@ export function computeStats(save) {
   // 這條公式讓「弓箭手擅長閃避、戰士擅長硬扛」的職業定位自然浮現,不需要另外寫特例判斷職業。
   let evasionRate = computeEvasionRate({ dex, level: save.level });
   // 格擋率:戰士/牧師的職業特色機制,職業基礎值(牧師較高、戰士是牧師的一半,見 classData.js)
-  // 疊加裝備(尤其是副手)提供的加成。法師/弓箭手基礎值為0,弓箭手維持迴避為主軸,
-  // 法師則改用下面的真氣減傷%(magicDamageReductionPct,完全來自副手裝備,無職業基礎值)。
+  // 疊加裝備(尤其是副手)提供的加成。法師/弓箭手基礎值為0。
   let blockRatePct = cls.blockRatePct || 0;
-  // 真氣減傷%:法師副手專屬機制,固定生效不看機率(見 combatEngine.js rollDamage),封頂80%避免傷害完全歸零。
-  let magicDamageReductionPct = 0;
+  // 真氣減傷:法師專屬機制,固定50%、不浮動、不可被任何裝備品質/強化/潛能/套裝疊加提升——
+  // 只要「玩家職業是法師」且「已裝備副手」就直接生效,嚴格只看 save.classId,不看裝備本身
+  // 實際帶了什麼屬性數值。這是刻意的防禦性寫法:先前弓箭手曾經被誤觸發這個機制扣到MP,
+  // 之後不論任何裝備資料是否有異常殘留,非法師職業永遠不可能算出非0的真氣減傷。
+  const MAGE_OFFHAND_REDUCTION_PCT = 0.5;
+  const magicDamageReductionPct = (save.classId === 'mage' && isItemUsable(save.equipment.offhand)) ? MAGE_OFFHAND_REDUCTION_PCT : 0;
 
   // 光環(被動)技能:常駐加成,需等級達到 unlockLevel 才會生效(不是一開始就有)
   const aura = cls.skills.aura;
@@ -155,6 +158,10 @@ export function computeStats(save) {
     if (aura.effect.critRatePct) critRate += aura.effect.critRatePct;
   }
 
+  // 職業特色防禦機制的裝備加成(格擋率/迴避率):嚴格只認 save.classId 決定是否生效,
+  // 不是看裝備本身帶了什麼屬性——避免任何裝備資料異常導致非對應職業被誤套用到不屬於
+  // 自己的防禦機制(同一份 GEAR_SLOTS 迴圈曾經對所有職業一視同仁疊加,是先前 bug 的根源)。
+  let evasionRatePctFromGear = 0;
   GEAR_SLOTS.forEach((slot) => {
     const item = save.equipment[slot];
     if (!isItemUsable(item)) return;
@@ -165,9 +172,13 @@ export function computeStats(save) {
     maxHp += bonus.hp || 0;
     maxMp += bonus.mp || 0;
     if (bonus.critRatePct) critRate += bonus.critRatePct / 100;
-    if (bonus.blockRatePct) blockRatePct += bonus.blockRatePct / 100;
-    if (bonus.magicDamageReductionPct) magicDamageReductionPct += bonus.magicDamageReductionPct / 100;
+    if ((save.classId === 'warrior' || save.classId === 'priest') && bonus.blockRatePct) {
+      blockRatePct += bonus.blockRatePct / 100;
+    } else if (save.classId === 'archer' && bonus.evasionRatePct) {
+      evasionRatePctFromGear += bonus.evasionRatePct / 100;
+    }
   });
+  evasionRate = Math.min(0.8, evasionRate + evasionRatePctFromGear);
 
   // 潛能(方塊洗出的隨機百分比詞條):加總所有已裝備物品的潛能詞條,最後以乘算方式套用在對應屬性上
   // (潛能詞條本身已是小數形式的百分比,如 0.03 代表 +3%,不需要再除以100,跟上方 item.stats.critRatePct 的「百分點」表示法不同)。
@@ -194,15 +205,15 @@ export function computeStats(save) {
   critRate += potentialCritRatePct;
 
   // 套裝效果「職業特色屬性%」(classSpecialPct,菁英第2件/真王第2件解鎖):依職業對應到
-  // 格擋率(戰士/牧師)、真氣減傷%(法師,一樣受80%封頂限制)或迴避率(弓箭手)。
+  // 格擋率(戰士/牧師)、真力上限%(法師——真氣減傷固定50%不可疊加,套裝改給真力上限讓法師
+  // 能撐更多次減傷)或迴避率(弓箭手)。
   if (setBonuses.classSpecialPct > 0) {
     const specialKey = CLASS_SPECIAL_STAT_KEY[save.classId];
     if (specialKey === 'blockRatePct') blockRatePct += setBonuses.classSpecialPct;
-    else if (specialKey === 'magicDamageReductionPct') magicDamageReductionPct += setBonuses.classSpecialPct;
+    else if (specialKey === 'maxMpPct') maxMp *= (1 + setBonuses.classSpecialPct);
     else if (specialKey === 'evasionRate') evasionRate = Math.min(0.8, evasionRate + setBonuses.classSpecialPct);
   }
   blockRatePct = Math.max(0, Math.min(0.95, blockRatePct));
-  magicDamageReductionPct = Math.max(0, Math.min(0.8, magicDamageReductionPct));
 
   // 套裝效果「全部能力%」(allStatsExceptSpecialPct,真王套裝第4件、集滿全套才解鎖的終極效果):
   // 除了上面已經處理過的職業特色屬性外,其餘全部現有戰鬥屬性一起乘算提升。

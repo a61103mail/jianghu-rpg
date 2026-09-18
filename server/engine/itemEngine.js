@@ -42,16 +42,25 @@ function commonArmorStat(level) {
   return { stats: { def: defRoll.value, hp: hpRoll.value }, quality: averageQuality([defRoll, hpRoll]) };
 }
 // 副手是唯一跟武器一樣「依職業鎖定」的普通掉落部位(不像防具/飾品任何職業通用)——
-// 法師的副手給真氣減傷%(magicDamageReductionPct,固定生效減傷,取代格擋),其餘職業給格擋率(blockRatePct)
-// + 生存數值(氣血/防禦)+ 少量攻擊值,呼應「副手主要是生存用的素質跟一些攻擊值」。
+// 法師的副手給真氣減傷(magicDamageReductionPct,固定50%生效減傷,不因裝備品質浮動,
+// 實際生效判斷嚴格只看 characterEngine.js 的 save.classId,這裡的數值僅供裝備欄顯示用);
+// 戰士/牧師給格擋率(blockRatePct);弓箭手給迴避率(evasionRatePct,呼應弓箭手主打閃避的定位)。
+// 三者皆額外附帶生存數值(氣血/防禦)+ 少量攻擊值。
 function commonOffhandStat(level, classId, atkKey) {
   const hpRoll = rollStatWithVariance(4 + level * 1.2);
   const atkRoll = rollStatWithVariance(1 + level * 0.35);
   if (classId === 'mage') {
-    const reductionRoll = rollDecimalStatWithVariance(18 + level * 0.9); // 普通掉落上限抓在略低於商店common(50%),避免打怪就直接接近封頂
     return {
-      stats: { hp: hpRoll.value, [atkKey]: atkRoll.value, magicDamageReductionPct: reductionRoll.value },
-      quality: averageQuality([hpRoll, atkRoll, reductionRoll]),
+      stats: { hp: hpRoll.value, [atkKey]: atkRoll.value, magicDamageReductionPct: 50 },
+      quality: averageQuality([hpRoll, atkRoll]),
+    };
+  }
+  if (classId === 'archer') {
+    const defRoll = rollStatWithVariance(1 + level * 0.4);
+    const evasionRoll = rollDecimalStatWithVariance(0.8 + level * 0.1);
+    return {
+      stats: { hp: hpRoll.value, def: defRoll.value, [atkKey]: atkRoll.value, evasionRatePct: evasionRoll.value },
+      quality: averageQuality([hpRoll, defRoll, atkRoll, evasionRoll]),
     };
   }
   const defRoll = rollStatWithVariance(1 + level * 0.4);
@@ -154,8 +163,9 @@ export function getItemTotalStats(item) {
   return item.stats || {};
 }
 
-// 法師選擇職業時免費贈送的基礎副手:固定 50% 真氣減傷(對應 common 階магic副手同等級數值),
-// 讓法師從 1 級開始就有「用副手抵擋傷害」的防禦手段,不必等到存夠錢打造才有生存工具。
+// 法師選擇職業時免費贈送的基礎副手:固定 50% 真氣減傷(此數值僅供顯示,實際生效判斷見
+// characterEngine.js,固定50%不受強化/潛能/套裝影響),讓法師從 1 級開始就有「用副手抵擋
+// 傷害」的防禦手段,不必等到存夠錢打造才有生存工具。
 export function createStarterMageOffhand() {
   return {
     id: nextId(),

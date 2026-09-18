@@ -101,12 +101,13 @@ const TIER_STATS = {
   epic: { weaponAtk: 47, armorDef: 34, armorHp: 109, accCritPct: 6.6, accHp: 66, accDex: 34 },
 };
 // 副手三階數值:生存向(氣血/防禦約為防具一半)+ 少量攻擊值(約武器三分之一)。
-// 非法師職業的 blockPct 是格擋率百分點加成;法師改用 magicReductionPct(真氣減傷%,固定生效)——
-// 起始贈送的基礎副手直接對應 common 階(50%減傷),打造更高階可推進到 rare 65%/epic 80%(封頂)。
+// 三個職業特色屬性各自用途:blockPct(戰士/牧師格擋率)、evasionPct(弓箭手迴避率)都是
+// 隨階層遞增的百分點加成;法師改用固定 50% 真氣減傷(不因強化/潛能/套裝疊加,三階數值皆
+// 相同,見 characterEngine.js——固定生效判斷只看 classId,這裡的數值僅供裝備欄顯示用)。
 const OFFHAND_TIER_STATS = {
-  common: { hp: 23, def: 7, atk: 7, blockPct: 3, magicReductionPct: 50 },
-  rare: { hp: 37, def: 11, atk: 10, blockPct: 5, magicReductionPct: 65 },
-  epic: { hp: 55, def: 17, atk: 16, blockPct: 7, magicReductionPct: 80 },
+  common: { hp: 23, def: 7, atk: 7, blockPct: 3, evasionPct: 3, magicReductionPct: 50 },
+  rare: { hp: 37, def: 11, atk: 10, blockPct: 5, evasionPct: 5, magicReductionPct: 50 },
+  epic: { hp: 55, def: 17, atk: 16, blockPct: 7, evasionPct: 7, magicReductionPct: 50 },
 };
 const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有', elite_set: '菁英套裝', trueboss_set: '真王套裝' };
 
@@ -116,6 +117,7 @@ const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有', elit
 function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold, offhandNames) {
   const recipes = [];
   const isMage = shopId === 'magic';
+  const isArcher = shopId === 'leather';
   ['common', 'rare', 'epic'].forEach((tier) => {
     const s = TIER_STATS[tier];
     const o = OFFHAND_TIER_STATS[tier];
@@ -124,12 +126,15 @@ function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold, offhan
     const gold = tierGold[tier];
     recipes.push({ id: `${shopId}_weapon_${tier}`, name: n.weapon, slot: 'weapon', tier, gold, materials, statBonus: { [atkKey]: s.weaponAtk } });
     recipes.push({ id: `${shopId}_armor_${tier}`, name: n.armor, slot: 'armor', tier, gold, materials, statBonus: { def: s.armorDef, hp: s.armorHp } });
-    recipes.push({
-      id: `${shopId}_offhand_${tier}`, name: offhandNames[tier], slot: 'offhand', tier, gold, materials,
-      statBonus: isMage
-        ? { hp: o.hp, [atkKey]: o.atk, magicDamageReductionPct: o.magicReductionPct }
-        : { hp: o.hp, def: o.def, [atkKey]: o.atk, blockRatePct: o.blockPct },
-    });
+    let offhandStatBonus;
+    if (isMage) {
+      offhandStatBonus = { hp: o.hp, [atkKey]: o.atk, magicDamageReductionPct: o.magicReductionPct };
+    } else if (isArcher) {
+      offhandStatBonus = { hp: o.hp, def: o.def, [atkKey]: o.atk, evasionRatePct: o.evasionPct };
+    } else {
+      offhandStatBonus = { hp: o.hp, def: o.def, [atkKey]: o.atk, blockRatePct: o.blockPct };
+    }
+    recipes.push({ id: `${shopId}_offhand_${tier}`, name: offhandNames[tier], slot: 'offhand', tier, gold, materials, statBonus: offhandStatBonus });
     recipes.push({ id: `${shopId}_accessory1_${tier}`, name: n.acc1, slot: 'accessory', tier, gold, materials, statBonus: { critRatePct: s.accCritPct } });
     recipes.push({ id: `${shopId}_accessory2_${tier}`, name: n.acc2, slot: 'accessory', tier, gold, materials, statBonus: { hp: s.accHp } });
     recipes.push({ id: `${shopId}_accessory3_${tier}`, name: n.acc3, slot: 'accessory', tier, gold, materials, statBonus: { dex: s.accDex } });

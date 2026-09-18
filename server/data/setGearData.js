@@ -23,9 +23,11 @@ const TRUEBOSS_SET_NAMES = ['上古樹靈套', '哥布林帝國套', '深淵岩�
 const CLASS_WEAPON_NAME = { warrior: '戰刃', mage: '法杖', priest: '聖典', archer: '獵弓' };
 const CLASS_OFFHAND_NAME = { warrior: '戰盾', mage: '秘印', priest: '聖徽', archer: '箭匣' };
 
-// 套裝效果的「職業特色屬性」對應:戰士/牧師=格擋率,法師=真氣減傷%,弓箭手=迴避率(見 characterEngine.js)
-export const CLASS_SPECIAL_STAT_KEY = { warrior: 'blockRatePct', priest: 'blockRatePct', mage: 'magicDamageReductionPct', archer: 'evasionRate' };
-export const CLASS_SPECIAL_STAT_LABEL = { warrior: '格擋率', priest: '格擋率', mage: '真氣減傷%', archer: '迴避率' };
+// 套裝效果的「職業特色屬性」對應:戰士/牧師=格擋率,法師=真力上限%(法師的真氣減傷固定50%只看副手,
+// 不受任何裝備/套裝加成疊加,見 characterEngine.js,故套裝改給真力上限讓法師能撐更多次減傷),
+// 弓箭手=迴避率
+export const CLASS_SPECIAL_STAT_KEY = { warrior: 'blockRatePct', priest: 'blockRatePct', mage: 'maxMpPct', archer: 'evasionRate' };
+export const CLASS_SPECIAL_STAT_LABEL = { warrior: '格擋率', priest: '格擋率', mage: '真力上限', archer: '迴避率' };
 
 // 套裝效果 tiers:每多穿一件解鎖一條,數值隨地圖序位遞增。
 // 1) atkPowerPct(攻擊力%,依職業套用atk或matk) 2) classSpecialPct(職業特色屬性,單位為百分點)
@@ -76,8 +78,10 @@ function buildClassOffhand(setId, mapIndex, classId) {
   const base = MAP_GEAR_BASE[mapIndex];
   const mult = TRUEBOSS_MULT; // 副手只有真王套裝才有(菁英套裝只有武器+防具2部位)
   const atkKey = WEAPON_TYPE_BY_CLASS[classId].atkKey;
+  // 法師套裝副手一律標示固定50%真氣減傷(僅供裝備欄顯示,實際生效判斷只看 characterEngine.js
+  // 的 classId,不會因套裝而疊加提升——套裝的職業特色效果改給法師「真力上限%」,見 classSpecialPct)。
   const stats = classId === 'mage'
-    ? { hp: Math.round(base.offhandHp * mult), [atkKey]: Math.round(base.offhandAtk * mult), magicDamageReductionPct: 0 } // 減傷由套裝效果動態賦予,基礎裝備本身不重複給
+    ? { hp: Math.round(base.offhandHp * mult), [atkKey]: Math.round(base.offhandAtk * mult), magicDamageReductionPct: 50 }
     : { hp: Math.round(base.offhandHp * mult), def: Math.round(base.offhandDef * mult), [atkKey]: Math.round(base.offhandAtk * mult) };
   return {
     id: `${setId}_offhand_${classId}`,

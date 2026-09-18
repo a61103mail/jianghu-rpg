@@ -39,7 +39,7 @@ export const CLASSES = {
     baseMp: 50,
     hpPerLevel: 8,
     mpPerLevel: 6,
-    blockRatePct: 0, // 法師不走格擋路線,防禦手段是副手提供的真氣減傷%(magicDamageReductionPct)
+    blockRatePct: 0, // 法師不走格擋路線,防禦手段是裝備副手固定觸發的50%真氣減傷(見 characterEngine.js)
     skills: {
       basic: { id: 'm_bolt', name: '火焰彈', type: 'single', unlockLevel: 1, mpCost: 4, coeff: 1.4, desc: '射出一枚火焰彈,對單一敵人造成傷害。' },
       aoe: { id: 'm_burst', name: '烈焰爆', type: 'aoe', unlockLevel: 8, mpCost: 10, coeff: 0.9, desc: '引爆烈焰,對所有敵人造成傷害。' },
