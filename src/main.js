@@ -1677,13 +1677,13 @@ async function enterGame() {
   }
   const res = await api.getState();
   S.state = res.state;
-  if (!S.state.classChosen) {
-    const clsRes = await api.getClasses();
-    S.classes = clsRes.classes;
-    S.view = 'chooseClass';
-  } else {
-    S.view = 'hub';
-  }
+  // 職業列表一律都要抓,不能只在「尚未選職業」時才抓——classNameZh() 顯示裝備的職業限定標示
+  // (例如「戰士」專屬武器)全程都要靠 S.classes 查中文名稱,只在選職業畫面才抓的話,選完職業後
+  // S.classes 會一直是空陣列,之後只要遇到帶 classType 的裝備就會直接顯示英文代碼(warrior/mage/
+  // rogue/archer)而不是中文職業名稱。
+  const clsRes = await api.getClasses();
+  S.classes = clsRes.classes;
+  S.view = S.state.classChosen ? 'hub' : 'chooseClass';
   render();
 }
 
