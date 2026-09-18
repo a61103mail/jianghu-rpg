@@ -96,17 +96,20 @@ const getSaveStmt = db.prepare('SELECT data FROM saves WHERE user_id = ?');
 const putSaveStmt = db.prepare(
   'INSERT INTO saves (user_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at'
 );
-const findUserByNameStmt = db.prepare('SELECT id, username FROM users WHERE username = ?');
+const findUserByPlayerIdStmt = db.prepare('SELECT id, username FROM users WHERE player_id = ?');
+const findPlayerIdStmt = db.prepare('SELECT player_id FROM users WHERE id = ?');
 const deleteSaveStmt = db.prepare('DELETE FROM saves WHERE user_id = ?');
 const deleteUserStmt = db.prepare('DELETE FROM users WHERE id = ?');
 
 const onlineUsers = new Map(); // userId -> socketId,供決鬥挑戰指定對象使用
-const onlineUsernames = new Map(); // userId -> username,供「在線玩家名單」功能顯示(見 broadcastPresence)
+const onlineUsernames = new Map(); // userId -> { username, playerId },供「在線玩家名單」功能顯示(見 broadcastPresence)
 
 // 廣播目前所有在線玩家名單給每一個人(不含自己),讓決鬥畫面能直接顯示可挑戰對象清單,
 // 不用再自己輸入對方帳號——每次有人上線/離線都重新推播一次,確保名單即時。
+// 畫面顯示一律用 playerId(遊戲暱稱),不曝光帳號 username;挑戰配對也改用 playerId(見 duel:challenge),
+// 這裡仍附上 username 只是保留給伺服器端內部除錯用,前端不應該讀取這個欄位來顯示。
 function broadcastPresence() {
-  const all = Array.from(onlineUsernames.entries()).map(([userId, username]) => ({ userId, username }));
+  const all = Array.from(onlineUsernames.entries()).map(([userId, info]) => ({ userId, username: info.username, playerId: info.playerId }));
   onlineUsers.forEach((socketId, userId) => {
     io.to(socketId).emit('presence:update', { players: all.filter((p) => p.userId !== userId) });
   });
@@ -165,16 +168,18 @@ function safeHandler(socket, errorEvent, fn) {
   };
 }
 
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   const { userId, username } = socket.user;
+  const userRow = await findPlayerIdStmt.get(userId);
+  const playerId = userRow?.player_id || null;
   onlineUsers.set(userId, socket.id);
-  onlineUsernames.set(userId, username);
+  onlineUsernames.set(userId, { username, playerId });
   broadcastPresence();
 
   // 玩家進入決鬥畫面時主動要求一份「當下」的在線名單快照,避免因為連線時機
   // (例如先逛了別的畫面,才第一次切到決鬥畫面)錯過先前的廣播、名單顯示過期。
   socket.on('presence:request', () => {
-    const all = Array.from(onlineUsernames.entries()).map(([uid, uname]) => ({ userId: uid, username: uname }));
+    const all = Array.from(onlineUsernames.entries()).map(([uid, info]) => ({ userId: uid, username: info.username, playerId: info.playerId }));
     socket.emit('presence:update', { players: all.filter((p) => p.userId !== userId) });
   });
 
@@ -182,7 +187,9 @@ io.on('connection', (socket) => {
     const row = await getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
-    const party = createParty({ userId, username, classId: save.classId, stats, equipment: save.equipment, socketId: socket.id });
+    // partyEngine.js 內部用 username 欄位生成戰報文字(「XX 施展 YY」之類);這裡直接傳入 playerId
+    // 頂替其值,讓組隊戰鬥全程顯示玩家ID而非帳號,不需要改動 partyEngine.js 任何一行。
+    const party = createParty({ userId, username: playerId, classId: save.classId, stats, equipment: save.equipment, socketId: socket.id });
     socket.join(party.code);
     socket.emit('party:joined', { code: party.code, members: party.members.map((m) => ({ userId: m.userId, username: m.username })) });
   }));
@@ -191,7 +198,7 @@ io.on('connection', (socket) => {
     const row = await getSaveStmt.get(userId);
     const save = JSON.parse(row.data);
     const stats = computeStats(save);
-    const party = joinParty(code, { userId, username, classId: save.classId, stats, equipment: save.equipment, socketId: socket.id });
+    const party = joinParty(code, { userId, username: playerId, classId: save.classId, stats, equipment: save.equipment, socketId: socket.id });
     if (!party) return socket.emit('party:error', { error: '找不到隊伍,或隊伍已滿/戰鬥中' });
     socket.join(party.code);
     broadcastParty(party, 'party:joined', { code: party.code, members: party.members.map((m) => ({ userId: m.userId, username: m.username })) });
@@ -314,14 +321,16 @@ io.on('connection', (socket) => {
   }));
 
   // ---- 決鬥(1v1,論勝負 或 決生死)----
-  socket.on('duel:challenge', safeHandler(socket, 'duel:error', async ({ targetUsername, stakes }) => {
-    const target = await findUserByNameStmt.get(targetUsername);
+  // 統一用玩家ID(遊戲暱稱)查找對象,不要求玩家知道對方的登入帳號——不論是點選線上名單
+  // 還是手動輸入,一律走同一套查找邏輯。
+  socket.on('duel:challenge', safeHandler(socket, 'duel:error', async ({ targetPlayerId, stakes }) => {
+    const target = await findUserByPlayerIdStmt.get(targetPlayerId);
     if (!target) return socket.emit('duel:error', { error: '查無此人' });
     if (target.id === userId) return socket.emit('duel:error', { error: '不能向自己下戰帖' });
     if (!onlineUsers.has(target.id)) return socket.emit('duel:error', { error: '對方不在線上' });
-    challenge({ userId, username }, target.id, stakes === 'death' ? 'death' : 'win');
-    io.to(onlineUsers.get(target.id)).emit('duel:challenged', { challengerName: username, stakes: stakes === 'death' ? 'death' : 'win' });
-    socket.emit('duel:challenge-sent', { targetUsername });
+    challenge({ userId, displayName: playerId }, target.id, stakes === 'death' ? 'death' : 'win');
+    io.to(onlineUsers.get(target.id)).emit('duel:challenged', { challengerName: playerId, stakes: stakes === 'death' ? 'death' : 'win' });
+    socket.emit('duel:challenge-sent', { targetPlayerId });
   }));
 
   socket.on('duel:decline', safeHandler(socket, 'duel:error', () => {
@@ -336,8 +345,8 @@ io.on('connection', (socket) => {
     const challengerStats = computeStats(JSON.parse(challengerRow.data));
     const targetStats = computeStats(JSON.parse(targetRow.data));
     const duel = acceptChallenge(
-      { userId: pending.challengerId, username: pending.challengerName, stats: challengerStats },
-      { userId, username, stats: targetStats },
+      { userId: pending.challengerId, displayName: pending.challengerName, stats: challengerStats },
+      { userId, displayName: playerId, stats: targetStats },
       pending.stakes
     );
     const payload = { duel, lines: duel.log };

@@ -90,6 +90,17 @@ async function initSchema() {
       created_at TEXT NOT NULL
     );
   `);
+
+  // player_id(玩家自訂遊戲暱稱,取代畫面上顯示帳號用):既有資料庫可能是舊 schema 沒有這個欄位,
+  // ALTER TABLE ADD COLUMN 補上去,欄位已存在時 libSQL 會丟錯,直接忽略該錯誤即可(讓這段可重複執行)。
+  // 唯一性另外用獨立索引處理(而不是欄位本身宣告 UNIQUE)——SQLite 的唯一索引允許多個 NULL 並存,
+  // 剛好符合「舊玩家尚未設定過暱稱」的情況,只有兩人都設定「相同的非 NULL 字串」才會真正衝突。
+  try {
+    await client.execute('ALTER TABLE users ADD COLUMN player_id TEXT');
+  } catch (e) {
+    if (!String(e?.message || e).toLowerCase().includes('duplicate column')) throw e;
+  }
+  await client.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_player_id ON users(player_id)');
 }
 
 // 供 backup.js 的還原流程包一層交易(BEGIN/COMMIT/ROLLBACK)使用——單一陳述式,跟 initSchema

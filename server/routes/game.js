@@ -19,6 +19,15 @@ import { trueBossStatusFor, isTrueBossReady, markTrueBossDefeated } from '../eng
 
 const getSaveStmt = db.prepare('SELECT data FROM saves WHERE user_id = ?');
 const putSaveStmt = db.prepare('INSERT INTO saves (user_id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at');
+const getPlayerIdStmt = db.prepare('SELECT player_id FROM users WHERE id = ?');
+
+// 交易所/日誌等對外顯示玩家名字的地方一律用玩家ID(遊戲暱稱),不曝光登入帳號——
+// JWT payload 只有 userId/username,playerId 是之後才可能設定的動態資料,故不編進 token,
+// 需要顯示時才向資料庫查一次。
+async function getDisplayName(userId) {
+  const row = await getPlayerIdStmt.get(userId);
+  return row?.player_id || null;
+}
 
 const REST_GOLD_PER_HP = 0.5; // 城鎮歇息:每恢復1點氣血花費的金幣
 const REST_GOLD_PER_MP = 0.5; // 每恢復1點真力花費的金幣
@@ -400,10 +409,12 @@ export default function gameRoutes() {
     res.json({ state: publicState(save) });
   });
 
-  // 選擇職業(首次進入遊戲時呼叫一次)
+  // 選擇職業(首次進入遊戲時呼叫一次)。要求玩家已設定過玩家ID(遊戲暱稱)才能選職業——
+  // 就算有人繞過前端直接呼叫這支API,伺服器端仍會擋下,不會出現「沒有暱稱卻進了遊戲」的狀態。
   router.post('/choose-class', async (req, res) => {
     const { classId } = req.body || {};
     if (!CLASS_ORDER.includes(classId)) return res.status(400).json({ error: '無效的職業' });
+    if (!(await getDisplayName(req.user.userId))) return res.status(400).json({ error: '請先設定玩家ID' });
     const save = await loadSave(req.user.userId);
     save.classId = classId;
     save.classChosen = true;
@@ -1102,7 +1113,7 @@ export default function gameRoutes() {
     if (save.gold < fee) return res.status(400).json({ error: `金幣不足,上架手續費需 ${fee} 枚` });
     const [item] = save.inventory.splice(idx, 1);
     save.gold -= fee;
-    await listItem(req.user.userId, req.user.username, item, numPrice);
+    await listItem(req.user.userId, await getDisplayName(req.user.userId), item, numPrice);
     await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), fee });
   });
@@ -1123,7 +1134,7 @@ export default function gameRoutes() {
     if (sellerRow) {
       const sellerSave = JSON.parse(sellerRow.data);
       sellerSave.gold += listing.price;
-      addLog(sellerSave, `你上架的「${listing.item.name}」被 ${req.user.username} 以 ${listing.price} 枚金幣購入。`);
+      addLog(sellerSave, `你上架的「${listing.item.name}」被 ${(await getDisplayName(req.user.userId)) || '一位玩家'} 以 ${listing.price} 枚金幣購入。`);
       await saveGame(listing.sellerId, sellerSave);
     }
     res.json({ state: publicState(save) });

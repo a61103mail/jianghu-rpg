@@ -1,5 +1,5 @@
 // 勇者闖蕩:前端主程式(單一 view-state 應用,無框架)
-import { api, setToken, clearToken, getToken, getUsernameFromToken } from './api.js';
+import { api, setToken, clearToken, getToken } from './api.js';
 import { connectSocket, getSocket, disconnectSocket } from './socket.js';
 
 const app = document.getElementById('app');
@@ -45,10 +45,11 @@ function formatCountdown(sec) {
 }
 
 const S = {
-  view: 'auth', // auth | chooseClass | hub | venture | inventory | shop | auction | party | duel | dead
+  view: 'auth', // auth | setPlayerId | chooseClass | hub | venture | inventory | shop | auction | party | duel | dead
   authMode: 'login',
   error: '',
   state: null,
+  playerId: null, // 玩家自訂的遊戲暱稱(取代畫面上顯示帳號),null 代表尚未設定過,需先導向 setPlayerId 畫面
   classes: [],
   shopId: null,
   shopData: null,
@@ -158,7 +159,7 @@ function topBar() {
   const expPct = Math.round((s.exp / s.expNeeded) * 100);
   return h('div', { class: 'panel' }, [
     h('div', {}, [
-      h('h2', {}, `${S.username || ''} · ${s.className}`),
+      h('h2', {}, `${S.playerId || ''} · ${s.className}`),
       // 等級跟金幣玩家反映不夠明顯,獨立拉出一整排、用大字+強調色顯示,不再跟其他小字資訊擠在一起
       h('div', { class: 'level-gold-row' }, [
         h('span', {}, `Lv.${s.level}`),
@@ -194,13 +195,13 @@ function navBtn(view, label) {
   }, label);
 }
 
-// 戰鬥中專用的精簡標題列:只留角色識別(帳號/職業/等級),不重複顯示氣血真力(戰鬥面板本身就有,
+// 戰鬥中專用的精簡標題列:只留角色識別(玩家ID/職業/等級),不重複顯示氣血真力(戰鬥面板本身就有,
 // 顯示兩次沒意義)、不顯示完整9項屬性、不顯示導覽按鈕(戰鬥中本來就不該切去別的畫面)。
 // 目的是把每回合都要操作的技能按鈕盡量往上推,減少甚至消除戰鬥中還要捲動畫面的情況。
 function combatTopBar() {
   const s = S.state;
   return h('div', { class: 'panel', style: 'padding:6px 14px;' }, [
-    h('div', { class: 'hint' }, `${S.username || ''} · ${s.className} · Lv.${s.level}`),
+    h('div', { class: 'hint' }, `${S.playerId || ''} · ${s.className} · Lv.${s.level}`),
   ]);
 }
 
@@ -223,6 +224,7 @@ function renderAuth() {
             const res = await fn(username, password);
             setToken(res.token);
             S.username = res.username;
+            S.playerId = res.playerId;
             await enterGame();
           } catch (e) {
             S.error = e.message;
@@ -239,6 +241,32 @@ function renderAuth() {
   mount([], [box]);
 }
 
+// ---- 設定玩家ID(遊戲內顯示暱稱,取代帳號):新帳號登入後、選職業前的第一步,只能設定一次 ----
+function renderSetPlayerId() {
+  const box = h('div', { class: 'panel', style: 'max-width:360px;margin:60px auto;' }, [
+    h('h1', {}, '取個遊戲ID吧'),
+    h('p', { class: 'hint' }, '這是你在遊戲中顯示給其他玩家看的名字(2~12字元,英數字/底線/中文),設定後不能更改,請謹慎輸入。'),
+    h('input', { type: 'text', id: 'f-player-id', placeholder: '遊戲ID(2~12字元)' }),
+    S.error ? h('div', { class: 'error-msg' }, S.error) : null,
+    h('button', {
+      class: 'btn primary',
+      onclick: async () => {
+        const playerId = document.getElementById('f-player-id').value.trim();
+        try {
+          const res = await api.setPlayerId(playerId);
+          S.playerId = res.playerId;
+          S.error = '';
+          await enterGame();
+        } catch (e) {
+          S.error = e.message;
+          render();
+        }
+      },
+    }, '確定'),
+  ]);
+  mount([], [box]);
+}
+
 // ---- 選擇職業 ----
 function renderChooseClass() {
   const box = h('div', { class: 'panel' }, [
@@ -248,8 +276,13 @@ function renderChooseClass() {
       h('div', {
         class: 'system-card',
         onclick: async () => {
-          await api.chooseClass(cls.id);
-          await enterGame();
+          try {
+            await api.chooseClass(cls.id);
+            await enterGame();
+          } catch (e) {
+            S.error = e.message;
+            render();
+          }
         },
       }, [
         h('h3', {}, cls.name),
@@ -1300,7 +1333,7 @@ function renderAuction() {
         itemLabel(l.item),
         potentialLine(l.item),
         h('div', { class: 'hint', style: 'margin-top:2px;' }, `賣家:${l.sellerName} — 開價 ${l.price} 金幣`),
-        l.sellerName === S.username
+        l.sellerName === S.playerId
           ? h('button', { class: 'btn danger', onclick: async () => { try { const r = await api.cancelListing(l.id); S.state = r.state; await openAuction(); } catch (e) { S.error = e.message; render(); } } }, '取消上架')
           : h('button', { class: 'btn primary', onclick: async () => { try { const r = await api.buyListing(l.id); S.state = r.state; S.error = '購買成功!'; await openAuction(); } catch (e) { S.error = e.message; render(); } } }, '購買'),
       ])
@@ -1347,7 +1380,7 @@ function renderParty() {
 
 function renderPartyCombat(combat) {
   const sock = getSocket();
-  const selfEntry = Object.entries(combat.members).find(([, m]) => m.username === S.username);
+  const selfEntry = Object.entries(combat.members).find(([, m]) => m.username === S.playerId);
   const self = selfEntry ? selfEntry[1] : null;
   const selfClassSkills = S.state.skills;
   const level = S.state.level;
@@ -1364,7 +1397,7 @@ function renderPartyCombat(combat) {
     h('div', { style: 'height:6px' }),
     ...Object.entries(combat.members).map(([uid, m]) => {
       const pct = Math.round((m.hp / m.maxHp) * 100);
-      const isSelf = m.username === S.username;
+      const isSelf = m.username === S.playerId;
       return h('div', { style: 'margin-bottom:4px;' }, [
         h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${pct}%` }), h('div', { class: 'bar-label' }, `${m.username}${isSelf ? '(你)' : ''} ${m.hp}/${m.maxHp}`)]),
         isSelf ? h('div', { class: 'bar-bg', style: 'margin-top:2px;' }, [h('div', { class: 'bar-fill mp', style: `width:${Math.round((m.mp / m.maxMp) * 100)}%` }), h('div', { class: 'bar-label' }, `真力 ${m.mp}/${m.maxMp}`)]) : null,
@@ -1439,24 +1472,24 @@ function renderDuel() {
   const sock = connectSocket();
   bindDuelSocket(sock);
 
-  const challengeBtn = (targetUsername, stakes) => h('button', {
+  const challengeBtn = (targetPlayerId, stakes) => h('button', {
     class: stakes === 'death' ? 'btn danger' : 'btn',
     onclick: () => {
-      if (stakes === 'death' && !confirm(`向「${targetUsername}」送出生死戰帖,敗者帳號將被永久刪除,確定?`)) return;
-      sock.emit('duel:challenge', { targetUsername, stakes });
+      if (stakes === 'death' && !confirm(`向「${targetPlayerId}」送出生死戰帖,敗者帳號將被永久刪除,確定?`)) return;
+      sock.emit('duel:challenge', { targetPlayerId, stakes });
     },
   }, stakes === 'death' ? '決生死' : '論勝負');
 
-  // 在線玩家名單:直接點選要挑戰的對象,不用自己輸入帳號,也不用猜誰現在有沒有在線
+  // 在線玩家名單:直接點選要挑戰的對象,顯示與下戰帖一律用玩家ID,不曝光任何人的登入帳號。
   const onlineListPanel = h('div', { class: 'panel' }, [
     h('h3', { style: 'font-size:15px;' }, `在線玩家(${S.onlinePlayers.length})`),
     S.onlinePlayers.length === 0
       ? h('div', { class: 'hint' }, '目前沒有其他玩家在線,晚點再來看看。')
       : h('div', { class: 'card-grid list-scroll' }, S.onlinePlayers.map((p) =>
           h('div', { class: 'item-card' }, [
-            h('div', { style: 'margin-bottom:4px;' }, p.username),
-            challengeBtn(p.username, 'win'),
-            challengeBtn(p.username, 'death'),
+            h('div', { style: 'margin-bottom:4px;' }, p.playerId || '(尚未取名)'),
+            challengeBtn(p.playerId, 'win'),
+            challengeBtn(p.playerId, 'death'),
           ])
         )),
   ]);
@@ -1465,12 +1498,12 @@ function renderDuel() {
     h('h3', {}, '決鬥'),
     h('p', { class: 'hint' }, '論勝負:切磋較量,點到為止。決生死:立下生死戰約,敗者帳號永久刪除,唯有勝者能得大量經驗。'),
     !S.duel ? h('div', {}, [
-      h('p', { class: 'hint' }, '也可以直接輸入帳號(不一定要在下方名單裡,但對方要在線才能收到戰帖):'),
-      h('input', { type: 'text', id: 'd-target', placeholder: '對方帳號' }),
-      h('button', { class: 'btn', onclick: () => sock.emit('duel:challenge', { targetUsername: document.getElementById('d-target').value.trim(), stakes: 'win' }) }, '下戰帖(論勝負)'),
+      h('p', { class: 'hint' }, '也可以直接輸入對方的玩家ID(不一定要在下方名單裡,但對方要在線才能收到戰帖):'),
+      h('input', { type: 'text', id: 'd-target', placeholder: '對方玩家ID' }),
+      h('button', { class: 'btn', onclick: () => sock.emit('duel:challenge', { targetPlayerId: document.getElementById('d-target').value.trim(), stakes: 'win' }) }, '下戰帖(論勝負)'),
       h('button', { class: 'btn danger', onclick: () => {
         if (confirm('此為生死決鬥,敗者帳號將被永久刪除,確定送出戰帖?')) {
-          sock.emit('duel:challenge', { targetUsername: document.getElementById('d-target').value.trim(), stakes: 'death' });
+          sock.emit('duel:challenge', { targetPlayerId: document.getElementById('d-target').value.trim(), stakes: 'death' });
         }
       } }, '下戰帖(決生死)'),
       S.duelPending ? h('div', { class: 'panel', style: 'margin-top:10px;' }, [
@@ -1491,10 +1524,11 @@ function renderDuelCombat() {
   const d = S.duel;
   const aPct = Math.round((d.a.hp / d.a.maxHp) * 100);
   const bPct = Math.round((d.b.hp / d.b.maxHp) * 100);
-  // 判斷是否輪到自己:比對 a/b 裡哪一方是自己(用 username 對照,跟其他地方判斷自己的方式一致),
-  // 再看該方的 userId 是否等於伺服器記錄的 turnUserId。伺服器端才是真正擋非法出手的防線,
-  // 這裡純粹是體驗優化——輪到對方時不顯示按鈕,不用手動去點了才發現「尚未輪到你」的錯誤訊息。
-  const selfSide = d.a.username === S.username ? d.a : d.b.username === S.username ? d.b : null;
+  // 判斷是否輪到自己:比對 a/b 裡哪一方是自己(d.a.username/d.b.username 這兩個欄位實際存放的
+  // 是玩家ID,見 duelEngine.js 的 displayName,故用 S.playerId 對照),再看該方的 userId 是否等於
+  // 伺服器記錄的 turnUserId。伺服器端才是真正擋非法出手的防線,這裡純粹是體驗優化——輪到對方時
+  // 不顯示按鈕,不用手動去點了才發現「尚未輪到你」的錯誤訊息。
+  const selfSide = d.a.username === S.playerId ? d.a : d.b.username === S.playerId ? d.b : null;
   const isMyTurn = selfSide && d.turnUserId === selfSide.userId;
   return h('div', {}, [
     h('div', { class: 'bar-bg' }, [h('div', { class: 'bar-fill hp', style: `width:${aPct}%` }), h('div', { class: 'bar-label' }, `${d.a.username} ${d.a.hp}/${d.a.maxHp}`)]),
@@ -1539,6 +1573,13 @@ function doLogout() {
 }
 
 async function enterGame() {
+  // 玩家ID(遊戲暱稱)是選職業前的第一道關卡,尚未設定就導向取ID畫面,不需要先取得角色狀態
+  // (角色本來就還沒選職業,state 也沒什麼好顯示的)。
+  if (!S.playerId) {
+    S.view = 'setPlayerId';
+    render();
+    return;
+  }
   const res = await api.getState();
   S.state = res.state;
   if (!S.state.classChosen) {
@@ -1553,6 +1594,7 @@ async function enterGame() {
 
 function render() {
   if (S.view === 'auth') return renderAuth();
+  if (S.view === 'setPlayerId') return renderSetPlayerId();
   if (S.view === 'chooseClass') return renderChooseClass();
   if (S.view === 'dead') return renderDeadScreen();
   if (S.view === 'hub') {
@@ -1569,12 +1611,12 @@ function render() {
 (async function init() {
   if (getToken()) {
     try {
-      // 頁面重新整理/重新開啟分頁時,token 還在 localStorage,但記憶體中的 S.username 會被重置為
-      // 初始值 undefined——先前只定義了 getUsernameFromToken() 這個還原用的輔助函式,卻從未真正
-      // 呼叫它,導致每次重新整理後 S.username 永遠是 undefined。這會讓所有「比對是否為自己」的地方
-      // 都失效,包括組隊副本判斷「哪個成員是你自己」失敗、技能欄因此完全不會顯示(誤以為卡住),
-      // 以及交易所「是否為自己上架」的判斷。在呼叫 enterGame() 之前先還原,修正這整類問題。
-      S.username = getUsernameFromToken();
+      // 頁面重新整理/重新開啟分頁時,token 還在 localStorage,但記憶體中的 S.username/S.playerId
+      // 會被重置為初始值——用 api.me() 問伺服器目前登入者的完整資訊(playerId 是動態設定的資料,
+      // 沒有編進 JWT,getUsernameFromToken() 只能還原 username,還原不了 playerId)。
+      const me = await api.me();
+      S.username = me.username;
+      S.playerId = me.playerId;
       await enterGame();
       return;
     } catch {

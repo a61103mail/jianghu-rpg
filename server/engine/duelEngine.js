@@ -7,6 +7,9 @@
 // 毫無策略可言。改為明確的 turnUserId 欄位——比較雙方敏捷(DEX),數值高的先手(相同則
 // 隨機決定),每次成功攻擊後輪轉給對方,伺服器端強制驗證「現在是不是你的回合」,不是前端
 // 自律就能解決的(前端隱藏按鈕只是體驗優化,真正的防線在後端拒絕不合法的攻擊請求)。
+//
+// displayName vs username:username 是登入帳號(內部識別用,不對外顯示),displayName 是
+// 玩家ID(遊戲暱稱,戰報文字與畫面顯示一律用這個),呼叫端(index.js)負責傳入正確的 displayName。
 import { rollDamage, narrateAttack } from './combatEngine.js';
 
 const duels = new Map(); // duelId -> duel
@@ -17,7 +20,7 @@ function randomId() {
 }
 
 export function challenge(challenger, targetUserId, stakes) {
-  pendingChallenges.set(targetUserId, { challengerId: challenger.userId, challengerName: challenger.username, stakes });
+  pendingChallenges.set(targetUserId, { challengerId: challenger.userId, challengerName: challenger.displayName, stakes });
 }
 
 export function getPendingChallenge(userId) {
@@ -40,13 +43,13 @@ export function acceptChallenge(challenger, target, stakes) {
   if (challengerDex > targetDex) turnUserId = challenger.userId;
   else if (targetDex > challengerDex) turnUserId = target.userId;
   else turnUserId = Math.random() < 0.5 ? challenger.userId : target.userId;
-  const firstName = turnUserId === challenger.userId ? challenger.username : target.username;
+  const firstName = turnUserId === challenger.userId ? challenger.displayName : target.displayName;
 
   const duel = {
     id,
     stakes, // 'win' | 'death'
-    a: { userId: challenger.userId, username: challenger.username, hp: challenger.stats.hp, maxHp: challenger.stats.hp, mp: challenger.stats.mp, maxMp: challenger.stats.mp, stats: challenger.stats },
-    b: { userId: target.userId, username: target.username, hp: target.stats.hp, maxHp: target.stats.hp, mp: target.stats.mp, maxMp: target.stats.mp, stats: target.stats },
+    a: { userId: challenger.userId, username: challenger.displayName, hp: challenger.stats.hp, maxHp: challenger.stats.hp, mp: challenger.stats.mp, maxMp: challenger.stats.mp, stats: challenger.stats },
+    b: { userId: target.userId, username: target.displayName, hp: target.stats.hp, maxHp: target.stats.hp, mp: target.stats.mp, maxMp: target.stats.mp, stats: target.stats },
     turnUserId,
     log: [
       stakes === 'death' ? '雙方立下生死戰約,此戰不死不休!' : '雙方點頭致意,點到為止,以決高下!',
