@@ -301,21 +301,30 @@ export function partyMemberAction(party, userId, action, extra = {}) {
       }
     }
 
-    const { amount, isCrit, missed, blocked } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: target.stats.def, critRate: enemy.critRate, evasionPct: target.stats.evasionRate, blockRatePct: target.stats.blockRatePct, magicDamageReductionPct: target.stats.magicDamageReductionPct });
+    const { amount, isCrit, missed, blocked, mpAbsorbed } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: target.stats.def, critRate: enemy.critRate, evasionPct: target.stats.evasionRate, blockRatePct: target.stats.blockRatePct, magicDamageReductionPct: target.stats.magicDamageReductionPct });
     if (missed) {
       lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, missed: true }));
       return;
     }
-    const boosted = isChargeRelease ? Math.round(amount * enemy.chargeSkill.dmgMult) : amount;
+    // 法師的真氣減傷%不是憑空消失,而是用真力(MP)扛住這部分傷害,MP不夠扛時差額轉回傷害由氣血承受
+    let realAmount = amount;
+    let mpUsedForAbsorb = 0;
+    if (mpAbsorbed > 0) {
+      mpUsedForAbsorb = Math.min(target.mp, mpAbsorbed);
+      target.mp -= mpUsedForAbsorb;
+      realAmount += mpAbsorbed - mpUsedForAbsorb;
+    }
+    const boosted = isChargeRelease ? Math.round(realAmount * enemy.chargeSkill.dmgMult) : realAmount;
     // 防禦只減輕「行動者自己」承受的傷害(跟單人戰鬥一致的設計精神:防禦是主動選擇要扛下這一擊的人)
     const isDefendingTarget = defending && targetId === userId;
     const finalAmount = isDefendingTarget ? Math.max(1, Math.ceil(boosted * 0.5)) : boosted;
     target.hp = Math.max(0, target.hp - finalAmount);
     consumeArmorDurability(target.equipment);
+    const absorbText = mpUsedForAbsorb > 0 ? `(真氣抵擋了 ${mpUsedForAbsorb} 點傷害)` : '';
     if (isChargeRelease) {
-      lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!對${target.username}造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${isDefendingTarget ? '(防禦大幅減輕了衝擊)' : ''}。`);
+      lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!對${target.username}造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${isDefendingTarget ? '(防禦大幅減輕了衝擊)' : ''}${absorbText}。`);
     } else {
-      lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, amount: finalAmount, isCrit, blocked }) + (isDefendingTarget ? '(防禦減傷)' : ''));
+      lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: target.username, amount: finalAmount, isCrit, blocked }) + (isDefendingTarget ? '(防禦減傷)' : '') + absorbText);
     }
   });
 

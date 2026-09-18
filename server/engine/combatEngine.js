@@ -54,28 +54,29 @@ function pick(arr) {
 // 判定順序:格擋 > 迴避 > 才判定是否被擊中。先擲格擋(戰士/牧師的職業特色機制)——
 // 觸發的話這次攻擊直接定性為「命中但減傷」,不再進行迴避判定;只有格擋沒觸發,
 // 才進一步擲迴避,迴避成功則直接 missed:true、完全無傷害;兩者都沒發生,才是「正常被擊中」。
-// magicDamageReductionPct:受擊方的真氣減傷%(法師副手專屬機制),固定生效不用擲機率,
-// 每次命中都按此比例直接減傷——跟格擋「機率觸發、觸發後打對折」不同,是「必定生效、按比例减免」。
-// 兩者互斥:法師不會同時擁有格擋值,魔法減傷優先於格擋判定。
+// magicDamageReductionPct:受擊方的真氣減傷%(法師副手專屬機制)——不是憑空消失的固定減傷,
+// 而是用真力(MP)去扛住這部分傷害:只要受到傷害就會觸發,算出「這次理論上能被MP吸收多少傷害」
+// (mpAbsorbed),實際扣多少MP、MP不夠扛時剩餘傷害要不要轉回HP,交給呼叫端依「當下真實剩餘MP」
+// 判斷(見 game.js/partyEngine.js/duelEngine.js 的呼叫點),這裡只負責算出理論吸收量。
 export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0, evasionPct = 0, blockRatePct = 0, magicDamageReductionPct = 0 }) {
   let blocked = false;
   if (blockRatePct > 0 && Math.random() < blockRatePct) {
     blocked = true;
   } else if (Math.random() < evasionPct) {
-    return { amount: 0, isCrit: false, missed: true, blocked: false };
+    return { amount: 0, isCrit: false, missed: true, blocked: false, mpAbsorbed: 0 };
   }
   const isCrit = Math.random() < critRate;
   const levelBase = LEVEL_BASE_COEF * level;
   const raw = (levelBase + atk * coeff) * (1 - resistPct);
   const varied = raw * (0.85 + Math.random() * 0.3);
   let mitigated = Math.max(1, Math.round(varied - def * 0.5));
-  if (magicDamageReductionPct > 0) {
-    mitigated = Math.max(1, Math.round(mitigated * (1 - magicDamageReductionPct)));
-  } else if (blocked) {
+  if (blocked) {
     mitigated = Math.max(1, Math.round(mitigated * 0.5));
   }
-  const amount = isCrit ? Math.round(mitigated * 1.6) : mitigated;
-  return { amount: Math.max(1, amount), isCrit, missed: false, blocked };
+  const preAbsorb = Math.max(1, isCrit ? Math.round(mitigated * 1.6) : mitigated);
+  const mpAbsorbed = magicDamageReductionPct > 0 ? Math.round(preAbsorb * magicDamageReductionPct) : 0;
+  const amount = Math.max(1, preAbsorb - mpAbsorbed);
+  return { amount, isCrit, missed: false, blocked, mpAbsorbed };
 }
 
 export function narrateAttack({ attackerName, defenderName, amount, isCrit, missed, blocked }) {

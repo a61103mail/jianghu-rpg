@@ -368,7 +368,7 @@ function renderHub() {
   ]);
 
   const mapsPanel = h('div', { class: 'panel' }, [
-    h('h3', {}, '闖蕩地圖(多關卡:戰鬥/採集/奇遇交錯,沿途可能遭遇菁英怪物;另有全服共用的真王可主動挑戰)'),
+    h('h3', {}, '闖蕩地圖(多關卡:戰鬥/採集/奇遇交錯,沿途可能隨機遭遇菁英怪物或全服共用的真王)'),
     h('div', { class: 'card-grid' }, s.maps.map((m) => {
       const tb = m.bossStatus.trueBoss;
       return h('div', { class: 'item-card' }, [
@@ -378,21 +378,16 @@ function renderHub() {
           class: 'hint',
           title: `菁英「${m.bossStatus.miniBoss.name}」・「${m.bossStatus.boss.name}」隨時可能於闖蕩途中遭遇`,
         }, '菁英怪物隨時可能於闖蕩途中遭遇'),
-        // 真王是全服共用的重生計時,不是個人進度——存活時可直接點擊挑戰,重生中顯示倒數
+        // 真王一樣是隨機遭遇(機率遠低於菁英),不是點擊按鈕直接挑戰——這裡只顯示全服共用的
+        // 重生狀態,讓玩家知道現在去闖蕩「有沒有機會」遇到真王,重生中則完全不會出現在遭遇池裡。
         h('div', {
-          class: tb.alive ? 'hint' : 'hint',
+          class: 'hint',
           title: `真王「${tb.name}」,全服玩家共用同一份重生計時`,
-        }, tb.alive ? `⚔ 真王「${tb.name}」現正可挑戰!` : `真王「${tb.name}」重生中(還剩${formatCountdown(tb.respawnInSec)})`),
+        }, tb.alive ? `⚔ 真王「${tb.name}」目前有機會遭遇!` : `真王「${tb.name}」重生中(還剩${formatCountdown(tb.respawnInSec)})`),
         h('button', {
           class: 'btn primary',
           onclick: async () => { try { S.bossEncounterAck = false; await api.huntStart(m.id); await refreshState(); } catch (e) { S.error = e.message; render(); } },
         }, '出發闖蕩'),
-        tb.alive
-          ? h('button', {
-              class: 'btn danger',
-              onclick: async () => { try { S.bossEncounterAck = false; await api.challengeTrueBoss(m.id); await refreshState(); } catch (e) { S.error = e.message; render(); } },
-            }, `挑戰真王「${tb.name}」`)
-          : h('button', { class: 'btn', disabled: true }, '真王尚在重生中'),
       ]);
     })),
   ]);

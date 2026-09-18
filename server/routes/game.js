@@ -154,9 +154,14 @@ function instantiateEnemy(monsterId) {
 }
 
 // 菁英(原小王/大王)遭遇判定:不再有個人重生冷卻,隨時可能以固定機率遭遇,就像更強一階的小怪。
-function rollBossEncounter() {
-  if (Math.random() < 0.08) return { monsterId: null, kind: 'boss' }; // monsterId 由呼叫端依 map 帶入,這裡只決定「這次是不是遭遇到菁英」
-  if (Math.random() < 0.16) return { monsterId: null, kind: 'miniboss' };
+// 真王一樣是隨機遭遇(不是明確點擊挑戰),但機率遠低於菁英、且必須全服共用計時器 ready 才會進入
+// 遭遇池——冷卻中完全不可能遇到,見 worldBossEngine.js。判定順序:真王 > 大王 > 小王,由稀有到常見依序擲骰。
+function rollBossEncounter(map) {
+  if (map.trueBoss && isTrueBossReady(map.id) && Math.random() < 0.03) {
+    return { kind: 'trueboss' };
+  }
+  if (Math.random() < 0.08) return { kind: 'boss' };
+  if (Math.random() < 0.16) return { kind: 'miniboss' };
   return null;
 }
 
@@ -170,7 +175,8 @@ function eliteStatusFor(map) {
   };
 }
 
-// 真王狀態:全服共用重生計時(見 worldBossEngine.js),不是每位玩家各自獨立進度
+// 真王狀態:全服共用重生計時(見 worldBossEngine.js),不是每位玩家各自獨立進度。
+// alive 代表「目前是否有機會在闖蕩中隨機遇到真王」,不是可以直接點擊挑戰的按鈕。
 function bossStatusFor(map) {
   const trueBoss = getMonster(map.trueBoss);
   return {
@@ -180,14 +186,16 @@ function bossStatusFor(map) {
 }
 
 function startCombatStage(save, map) {
-  const bossRoll = rollBossEncounter();
+  const bossRoll = rollBossEncounter(map);
   let enemies;
   let isBossFight = false;
   let bossKind = null;
+  let isTrueBossFight = false;
   if (bossRoll) {
     isBossFight = true;
     bossKind = bossRoll.kind;
-    const monsterId = bossKind === 'boss' ? map.boss : map.miniBoss;
+    isTrueBossFight = bossKind === 'trueboss';
+    const monsterId = bossKind === 'trueboss' ? map.trueBoss : bossKind === 'boss' ? map.boss : map.miniBoss;
     enemies = [instantiateEnemy(monsterId)];
   } else {
     const count = 1 + Math.floor(Math.random() * map.maxEnemiesPerFight);
@@ -199,7 +207,7 @@ function startCombatStage(save, map) {
     mapName: map.name,
     isBossFight,
     bossKind,
-    isTrueBossFight: false, // 一般遭遇不會是真王戰,真王只能透過明確挑戰路由觸發(見 /trueboss/challenge)
+    isTrueBossFight,
     enemies,
     playerHp: save.hp,
     playerMaxHp: stats.maxHp,
@@ -207,7 +215,7 @@ function startCombatStage(save, map) {
     playerMaxMp: stats.maxMp,
     buffs: [],
     log: [
-      isBossFight ? `菁英「${enemies[0].name}」現身了!` : `遭遇了 ${enemies.map((e) => e.name).join('、')}!`,
+      isTrueBossFight ? `真王「${enemies[0].name}」現身了!這是一場硬仗,做好準備。` : isBossFight ? `菁英「${enemies[0].name}」現身了!` : `遭遇了 ${enemies.map((e) => e.name).join('、')}!`,
       levelGapDescription(save.level, enemies[0].level),
     ],
   };
@@ -473,40 +481,6 @@ export default function gameRoutes() {
     res.json({ state: publicState(save) });
   });
 
-  // 挑戰真王:明確的按鈕觸發,不是隨機遭遇——直接開一場單場戰鬥(不透過闖蕩旅程的多關卡系統),
-  // 真王是否可挑戰採全服共用計時(worldBossEngine.js),不是每個玩家各自獨立的進度。
-  router.post('/trueboss/challenge', async (req, res) => {
-    const { mapId } = req.body || {};
-    const map = getMap(mapId);
-    if (!map || !map.trueBoss) return res.status(400).json({ error: '無此地圖真王' });
-    const save = await loadSave(req.user.userId);
-    if (save.activeCombat || save.activeVenture) return res.status(400).json({ error: '請先結束目前的戰鬥或旅程' });
-    if (save.hp <= 0) return res.status(400).json({ error: '氣血已盡,請先回城鎮歇息' });
-    if (!isTrueBossReady(map.id)) return res.status(400).json({ error: '真王尚在重生中,請稍後再來挑戰' });
-    const stats = computeStats(save);
-    const enemy = instantiateEnemy(map.trueBoss);
-    save.currentMapId = map.id;
-    save.activeCombat = {
-      mapId: map.id,
-      mapName: map.name,
-      isBossFight: true,
-      bossKind: 'trueboss',
-      isTrueBossFight: true,
-      enemies: [enemy],
-      playerHp: save.hp,
-      playerMaxHp: stats.maxHp,
-      playerMp: save.mp,
-      playerMaxMp: stats.maxMp,
-      buffs: [],
-      log: [
-        `真王「${enemy.name}」現身了!這是一場硬仗,做好準備。`,
-        levelGapDescription(save.level, enemy.level),
-      ],
-    };
-    await saveGame(req.user.userId, save);
-    res.json({ state: publicState(save) });
-  });
-
   router.post('/hunt/continue', async (req, res) => {
     const save = await loadSave(req.user.userId);
     const venture = save.activeVenture;
@@ -697,19 +671,29 @@ export default function gameRoutes() {
           }
         }
 
-        const { amount, isCrit, missed, blocked } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: stats.def, critRate: enemy.critRate, evasionPct: stats.evasionRate, blockRatePct: stats.blockRatePct, magicDamageReductionPct: stats.magicDamageReductionPct });
+        const { amount, isCrit, missed, blocked, mpAbsorbed } = rollDamage({ level: enemy.level, atk: enemy.atk, coeff: 1, def: stats.def, critRate: enemy.critRate, evasionPct: stats.evasionRate, blockRatePct: stats.blockRatePct, magicDamageReductionPct: stats.magicDamageReductionPct });
         if (missed) {
           lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', missed: true }));
           return;
         }
-        const boosted = isChargeRelease ? Math.round(amount * enemy.chargeSkill.dmgMult) : amount;
+        // 法師的真氣減傷%不是憑空消失,而是用真力(MP)扛住這部分傷害——只要受到傷害就會觸發,
+        // MP 不夠扛時,扛不住的差額要轉回傷害由氣血承受(不能讓沒有真力的法師還是白吃全額減傷)。
+        let realAmount = amount;
+        let mpUsedForAbsorb = 0;
+        if (mpAbsorbed > 0) {
+          mpUsedForAbsorb = Math.min(combat.playerMp, mpAbsorbed);
+          combat.playerMp -= mpUsedForAbsorb;
+          realAmount += mpAbsorbed - mpUsedForAbsorb;
+        }
+        const boosted = isChargeRelease ? Math.round(realAmount * enemy.chargeSkill.dmgMult) : realAmount;
         const finalAmount = defending ? Math.max(1, Math.ceil(boosted * 0.5)) : boosted;
         combat.playerHp = Math.max(0, combat.playerHp - finalAmount);
         consumeArmorDurability(save.equipment);
+        const absorbText = mpUsedForAbsorb > 0 ? `(真氣抵擋了 ${mpUsedForAbsorb} 點傷害)` : '';
         if (isChargeRelease) {
-          lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${defending ? '(防禦大幅減輕了衝擊)' : ''}。`);
+          lines.push(`💥 ${enemy.name}蓄力已久,使出「${enemy.chargeSkill.name}」!造成 ${finalAmount} 點傷害${isCrit ? '(要害!)' : ''}${defending ? '(防禦大幅減輕了衝擊)' : ''}${absorbText}。`);
         } else {
-          lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', amount: finalAmount, isCrit, blocked }) + (defending ? '(防禦減傷)' : ''));
+          lines.push(narrateEnemyAttack({ enemyName: enemy.name, targetName: '你', amount: finalAmount, isCrit, blocked }) + (defending ? '(防禦減傷)' : '') + absorbText);
         }
       });
       combat.buffs = tickBuffs(combat.buffs);

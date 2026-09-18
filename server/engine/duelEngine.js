@@ -45,8 +45,8 @@ export function acceptChallenge(challenger, target, stakes) {
   const duel = {
     id,
     stakes, // 'win' | 'death'
-    a: { userId: challenger.userId, username: challenger.username, hp: challenger.stats.hp, maxHp: challenger.stats.hp, stats: challenger.stats },
-    b: { userId: target.userId, username: target.username, hp: target.stats.hp, maxHp: target.stats.hp, stats: target.stats },
+    a: { userId: challenger.userId, username: challenger.username, hp: challenger.stats.hp, maxHp: challenger.stats.hp, mp: challenger.stats.mp, maxMp: challenger.stats.mp, stats: challenger.stats },
+    b: { userId: target.userId, username: target.username, hp: target.stats.hp, maxHp: target.stats.hp, mp: target.stats.mp, maxMp: target.stats.mp, stats: target.stats },
     turnUserId,
     log: [
       stakes === 'death' ? '雙方立下生死戰約,此戰不死不休!' : '雙方點頭致意,點到為止,以決高下!',
@@ -80,13 +80,22 @@ export function duelAttack(duel, userId) {
   if (duel.turnUserId !== userId) return { lines: ['尚未輪到你出手,請等待對方行動。'], rejected: true };
 
   const atkStat = actor.stats.attackType === 'matk' ? actor.stats.matk : actor.stats.atk;
-  const { amount, isCrit, missed, blocked } = rollDamage({ level: actor.stats.level, atk: atkStat, coeff: 1, def: target.stats.def, critRate: actor.stats.critRate, evasionPct: target.stats.evasionRate, blockRatePct: target.stats.blockRatePct, magicDamageReductionPct: target.stats.magicDamageReductionPct });
+  const { amount, isCrit, missed, blocked, mpAbsorbed } = rollDamage({ level: actor.stats.level, atk: atkStat, coeff: 1, def: target.stats.def, critRate: actor.stats.critRate, evasionPct: target.stats.evasionRate, blockRatePct: target.stats.blockRatePct, magicDamageReductionPct: target.stats.magicDamageReductionPct });
   duel.turnUserId = target.userId; // 不論本回合有沒有命中,行動後一律輪到對方——「未命中」不該讓你連續多打一次
   if (missed) {
     return { lines: [narrateAttack({ attackerName: actor.username, defenderName: target.username, missed: true })], ended: null, loserUserId: null };
   }
-  target.hp = Math.max(0, target.hp - amount);
-  const lines = [narrateAttack({ attackerName: actor.username, defenderName: target.username, amount, isCrit, blocked })];
+  // 法師的真氣減傷%不是憑空消失,而是用真力(MP)扛住這部分傷害,MP不夠扛時差額轉回傷害由氣血承受
+  let realAmount = amount;
+  let mpUsedForAbsorb = 0;
+  if (mpAbsorbed > 0) {
+    mpUsedForAbsorb = Math.min(target.mp, mpAbsorbed);
+    target.mp -= mpUsedForAbsorb;
+    realAmount += mpAbsorbed - mpUsedForAbsorb;
+  }
+  target.hp = Math.max(0, target.hp - realAmount);
+  const absorbText = mpUsedForAbsorb > 0 ? `(真氣抵擋了 ${mpUsedForAbsorb} 點傷害)` : '';
+  const lines = [narrateAttack({ attackerName: actor.username, defenderName: target.username, amount: realAmount, isCrit, blocked }) + absorbText];
 
   if (target.hp <= 0) {
     duel.ended = duel.stakes;
