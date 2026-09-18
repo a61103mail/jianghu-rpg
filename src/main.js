@@ -68,6 +68,8 @@ const S = {
   setInfoModal: null, // 套裝效果彈出視窗內容:{ name, pieces, equippedCount(可選), tiers }(見 renderSetInfoModal)
   shopSlotFilter: 'weapon', // 商店裝備製作目前選中的部位分頁籤(武器/防具/副手/飾品),避免4部位x多稀有度全部展開要滑很長
   shopCategoryFilter: 'normal', // 商店裝備製作目前選中的類型分頁籤('normal'一般配方 | 'set'套裝配方)
+  invSlotFilter: 'weapon', // 背包裝備目前選中的部位分頁籤,同樣避免4部位全部展開要滑很長
+  invMaterialFilter: 'junk', // 背包材料/雜物目前選中的種類分頁籤
 };
 
 function h(tag, attrs = {}, children = []) {
@@ -910,7 +912,8 @@ function renderSetInfoModal() {
 }
 
 
-const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)', party_material: '組隊限定素材(僅組隊副本擊敗大王掉落)', trueboss_material: '真王結晶(僅地圖真王掉落,供頂級配方使用)' };
+const MATERIAL_KIND_LABEL = { junk: '雜物', material: '製作素材', rare_material: '稀有素材', party_material: '組隊限定素材', set_material: '套裝素材' };
+const MATERIAL_KIND_ICON = { junk: '🗑', material: '🧱', rare_material: '💎', party_material: '🎫', set_material: '📦' };
 
 // 背包裝備分類:依部位分組顯示(武器/防具/副手/飾品),而不是全部裝備混成一個長列表——
 // 東西一多就分不清哪些是武器哪些是飾品,分類後同類裝備放在一起,找東西不用整排掃過去。
@@ -997,40 +1000,52 @@ function renderInventory() {
     ]);
   }
 
-  // 材料/雜物清單:先前只有雜貨店能看到「雜物」,製作素材/稀有素材完全沒地方顯示,身上到底有什麼完全看不到
-  const materialGroups = { junk: [], material: [], rare_material: [], party_material: [], trueboss_material: [] };
+  // 材料/雜物清單改用種類圖示分頁籤(仿商店分頁籤模式)——先前依種類全部展開條列,種類一多
+  // 就要一路往下滑,現在一次只顯示一個種類,點圖示切換,不需要滑動就能看完(見使用者回饋)。
+  const materialGroups = { junk: [], material: [], rare_material: [], party_material: [], set_material: [] };
   s.materials.forEach((m) => { if (materialGroups[m.kind]) materialGroups[m.kind].push(m); });
+  const availableMatKinds = Object.keys(materialGroups).filter((k) => materialGroups[k].length > 0);
+  if (!availableMatKinds.includes(S.invMaterialFilter)) S.invMaterialFilter = availableMatKinds[0];
   const materialsPanel = h('div', { class: 'panel' }, [
     h('h3', {}, '材料 / 雜物'),
-    ...Object.entries(materialGroups).flatMap(([kind, list]) =>
-      list.length === 0 ? [] : [
-        h('div', { class: 'hint', style: 'margin-top:8px;' }, MATERIAL_KIND_LABEL[kind]),
-        h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;' }, list.map((m) => h('span', { class: 'item-card', style: 'padding:4px 8px;margin:0;' }, `${m.name} x${m.count}`))),
-      ]
-    ),
-    s.materials.length === 0 ? h('div', { class: 'hint' }, '身上沒有任何材料或雜物,去闖蕩狩獵/採集吧。') : null,
+    availableMatKinds.length === 0
+      ? h('div', { class: 'hint' }, '身上沒有任何材料或雜物,去闖蕩狩獵/採集吧。')
+      : h('div', {}, [
+          h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;' }, availableMatKinds.map((k) =>
+            h('button', {
+              class: `btn${S.invMaterialFilter === k ? ' primary' : ''}`,
+              onclick: () => { S.invMaterialFilter = k; render(); },
+            }, `${MATERIAL_KIND_ICON[k]} ${MATERIAL_KIND_LABEL[k]}(${materialGroups[k].length})`)
+          )),
+          h('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;' },
+            materialGroups[S.invMaterialFilter].map((m) => h('span', { class: 'item-card', style: 'padding:4px 8px;margin:0;' }, `${m.name} x${m.count}`))
+          ),
+        ]),
   ]);
 
-  // 背包依裝備部位分類分組顯示(武器/防具/副手/飾品各自一組),不再是一個混雜所有種類的長列表——
-  // 東西一多容易分不清哪些是武器哪些是飾品,分組後同類放一起,要找哪件裝備一眼就能定位。
+  // 背包裝備改用部位圖示分頁籤:同樣道理,一次只顯示一個部位,不用4個部位全部展開往下滑。
   const invGroups = groupInventoryBySlot(s.inventory);
+  const availableInvSlots = INV_GROUP_ORDER.filter((key) => invGroups[key].length > 0);
+  if (!availableInvSlots.includes(S.invSlotFilter)) S.invSlotFilter = availableInvSlots[0];
   const invPanel = h('div', { class: 'panel' }, [
     h('h3', {}, '背包(裝備)'),
-    ...INV_GROUP_ORDER.flatMap((key) => {
-      const list = invGroups[key];
-      if (list.length === 0) return [];
-      return [
-        h('div', { class: 'hint', style: 'margin-top:10px;font-size:15px;' }, `${INV_GROUP_LABEL[key]}(${list.length})`),
-        h('div', { class: 'card-grid' }, list.map(renderInventoryItemCard)),
-      ];
-    }),
-    s.inventory.length === 0 ? h('div', { class: 'hint' }, '背包空空如也,去闖蕩累積裝備吧。') : null,
+    s.inventory.length === 0
+      ? h('div', { class: 'hint' }, '背包空空如也,去闖蕩累積裝備吧。')
+      : h('div', {}, [
+          h('div', { style: 'display:flex;gap:6px;flex-wrap:wrap;' }, availableInvSlots.map((key) =>
+            h('button', {
+              class: `btn${S.invSlotFilter === key ? ' primary' : ''}`,
+              onclick: () => { S.invSlotFilter = key; render(); },
+            }, `${INV_GROUP_LABEL[key]}(${invGroups[key].length})`)
+          )),
+          h('div', { class: 'card-grid', style: 'margin-top:8px;' }, invGroups[S.invSlotFilter].map(renderInventoryItemCard)),
+        ]),
   ]);
 
-  // 左欄:裝備欄+材料(較短、資訊型);右欄:背包裝備清單(項目多,並排能少滾很多)
+  // 左欄:裝備欄+材料(較短、資訊型);右欄:背包裝備清單(改分頁籤後已精簡,不再需要額外捲動容器)
   const content = h('div', { class: 'grid-2' }, [
     h('div', {}, [equipPanel, materialsPanel]),
-    h('div', { class: 'list-scroll' }, [invPanel]),
+    h('div', {}, [invPanel]),
   ]);
   mount([topBar(), errorBanner()], [content]);
 }
