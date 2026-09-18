@@ -907,6 +907,33 @@ async function openShop(shopId) {
   render();
 }
 
+// 商店配方稀有度/套裝標籤的顏色,一般配方(common/rare/epic)跟套裝配方(elite_set/trueboss_set)共用同一份色票
+const TIER_COLOR = { common: '#b0b0b0', rare: '#a855f7', epic: '#f59e0b', elite_set: '#22d3ee', trueboss_set: '#ef4444' };
+
+// 商店配方卡片:一般配方與套裝配方共用同一種呈現方式(名稱/金幣/材料需求/屬性/製作按鈕)
+function renderRecipeCard(shopId, r) {
+  const canAfford = r.materialsDetail.every((d) => d.have >= d.need);
+  const matText = r.materialsDetail.map((d) => `${d.name} ${d.have}/${d.need}`).join('、');
+  return h('div', { class: `item-card rarity-${r.tier}` }, [
+    h('div', {}, `${r.name}(${r.gold} 金幣, `),
+    h('span', { style: canAfford ? '' : 'color:#ef4444;' }, matText),
+    h('span', {}, ')'),
+    h('div', { class: 'hint' }, `屬性:${statsText(r.statBonus)}`),
+    h('button', {
+      class: 'btn primary',
+      onclick: async () => {
+        try {
+          const res = await api.craft(shopId, r.id);
+          S.error = `製作成功:${res.crafted.name}`;
+          S.state = res.state;
+          S.shopData = await api.getShop(shopId);
+          render();
+        } catch (e) { S.error = e.message; render(); }
+      },
+    }, '製作'),
+  ]);
+}
+
 function renderShop() {
   const shopId = S.shopId;
   const data = S.shopData;
@@ -956,7 +983,7 @@ function renderShop() {
     )));
 
     panel.appendChild(h('h3', { style: 'margin-top:14px;' }, '回收雜物/素材(依全服庫存量動態計價;製作素材要留著做裝備還是賣錢由你決定)'));
-    const mySellables = S.state.materials.filter((m) => ['junk', 'material', 'rare_material', 'party_material'].includes(m.kind));
+    const mySellables = S.state.materials.filter((m) => ['junk', 'material', 'rare_material', 'party_material', 'set_material'].includes(m.kind));
     if (mySellables.length === 0) panel.appendChild(h('div', { class: 'hint' }, '身上沒有可回收的雜物或素材。'));
     const doSell = async (itemId, qty) => {
       try {
@@ -968,7 +995,7 @@ function renderShop() {
       } catch (e) { S.error = e.message; render(); }
     };
     // 各素材種類的簡短提示文字(不含雜物,雜物不用額外標示種類)
-    const KIND_HINT_ZH = { rare_material: '稀有素材', material: '製作素材', party_material: '組隊限定' };
+    const KIND_HINT_ZH = { rare_material: '稀有素材', material: '製作素材', party_material: '組隊限定', set_material: '套裝素材' };
     panel.appendChild(h('div', { class: 'card-grid list-scroll' }, mySellables.map((m) => {
       const marketInfo = data.market.sellables.find((j) => j.id === m.id);
       const qtyInputId = `sell-qty-${m.id}`;
@@ -988,35 +1015,35 @@ function renderShop() {
         ]),
       ]);
     })));
+
+    // 雜貨店也能製作「真王飾品」套裝配方(職業通用,固定放在此處統一製作,見 setGearData.js)
+    if ((data.setRecipes || []).length > 0) {
+      panel.appendChild(h('h3', { style: 'margin-top:14px;' }, '套裝製作(真王飾品,職業通用)'));
+      panel.appendChild(h('div', { class: 'card-grid' }, data.setRecipes.map((r) => renderRecipeCard(shopId, r))));
+    }
   } else if (data) {
-    const TIER_COLOR = { common: '#b0b0b0', rare: '#a855f7', epic: '#f59e0b' };
+    // 商店配方依「種類(部位)」分大項,每個部位大項內再區分「一般配方(依稀有度)」與「套裝配方(菁英/真王)」——
+    // 先前只依稀有度分3組、武器防具飾品混在一起,容易分不清楚哪些是要找的部位。
     panel.appendChild(h('h3', {}, '裝備製作(僅此商店可製作,無法透過打怪取得;不設等級門檻,材料+金幣足夠即可製作)'));
-    ['common', 'rare', 'epic'].forEach((tier) => {
-      const tierRecipes = (data.recipes || []).filter((r) => r.tier === tier);
-      if (tierRecipes.length === 0) return;
-      panel.appendChild(h('div', { style: `color:${TIER_COLOR[tier]};font-weight:bold;margin-top:10px;` }, `【${tierRecipes[0].tierLabel}】`));
-      panel.appendChild(h('div', { class: 'card-grid' }, tierRecipes.map((r) => {
-        const canAfford = r.materialsDetail.every((d) => d.have >= d.need);
-        const matText = r.materialsDetail.map((d) => `${d.name} ${d.have}/${d.need}`).join('、');
-        return h('div', { class: `item-card rarity-${tier}` }, [
-          h('div', {}, `${r.name}(${r.gold} 金幣, `),
-          h('span', { style: canAfford ? '' : 'color:#ef4444;' }, matText),
-          h('span', {}, ')'),
-          h('div', { class: 'hint' }, `屬性:${statsText(r.statBonus)}`),
-          h('button', {
-            class: 'btn primary',
-            onclick: async () => {
-              try {
-                const res = await api.craft(shopId, r.id);
-                S.error = `製作成功:${res.crafted.name}`;
-                S.state = res.state;
-                S.shopData = await api.getShop(shopId);
-                render();
-              } catch (e) { S.error = e.message; render(); }
-            },
-          }, '製作'),
-        ]);
-      })));
+    const SHOP_SLOT_ORDER = ['weapon', 'armor', 'offhand', 'accessory'];
+    const SHOP_SLOT_LABEL = { weapon: '⚔ 武器', armor: '🛡 防具', offhand: '🔰 副手', accessory: '💍 飾品' };
+    SHOP_SLOT_ORDER.forEach((slot) => {
+      const normalRecipesForSlot = (data.recipes || []).filter((r) => r.slot === slot);
+      const setRecipesForSlot = (data.setRecipes || []).filter((r) => r.slot === slot);
+      if (normalRecipesForSlot.length === 0 && setRecipesForSlot.length === 0) return;
+      panel.appendChild(h('h3', { style: 'margin-top:14px;font-size:16px;' }, SHOP_SLOT_LABEL[slot]));
+      ['common', 'rare', 'epic'].forEach((tier) => {
+        const tierRecipes = normalRecipesForSlot.filter((r) => r.tier === tier);
+        if (tierRecipes.length === 0) return;
+        panel.appendChild(h('div', { style: `color:${TIER_COLOR[tier]};font-weight:bold;margin-top:8px;` }, `【${tierRecipes[0].tierLabel}】`));
+        panel.appendChild(h('div', { class: 'card-grid' }, tierRecipes.map((r) => renderRecipeCard(shopId, r))));
+      });
+      ['elite_set', 'trueboss_set'].forEach((tier) => {
+        const tierRecipes = setRecipesForSlot.filter((r) => r.tier === tier);
+        if (tierRecipes.length === 0) return;
+        panel.appendChild(h('div', { style: `color:${TIER_COLOR[tier]};font-weight:bold;margin-top:8px;` }, `【${tierRecipes[0].tierLabel}・${tierRecipes[0].setName}】`));
+        panel.appendChild(h('div', { class: 'card-grid' }, tierRecipes.map((r) => renderRecipeCard(shopId, r))));
+      });
     });
   }
 

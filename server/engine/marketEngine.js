@@ -5,7 +5,7 @@
 import db from '../db.js';
 import { ITEMS, POTION_ORDER, getPotion } from '../data/itemData.js';
 
-const SELLABLE_KINDS = ['junk', 'material', 'rare_material', 'party_material', 'trueboss_material'];
+const SELLABLE_KINDS = ['junk', 'material', 'rare_material', 'party_material', 'set_material'];
 
 const DECAY_INTERVAL_MS = 5 * 60 * 1000;
 const DECAY_PCT = 0.25; // 每次銷毀目前庫存的 25%

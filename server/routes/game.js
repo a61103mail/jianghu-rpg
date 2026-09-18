@@ -9,8 +9,8 @@ import { getItem, getShop, SHOP_ORDER, getRareRecipes, getPotion, POTION_ORDER, 
 import { rollMapEvent } from '../data/eventData.js';
 import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen } from '../engine/characterEngine.js';
 import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from '../engine/combatEngine.js';
-import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand, instantiateSetGear } from '../engine/itemEngine.js';
-import { getSetTemplatesFor, getSetInfo } from '../data/setGearData.js';
+import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand, craftSetItem } from '../engine/itemEngine.js';
+import { getSetInfo, getSetRecipesForShop, getSetRecipeById } from '../data/setGearData.js';
 import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
@@ -742,32 +742,13 @@ export default function gameRoutes() {
             }
           }
         });
-        // 真王掉落裝備的機率與次數都明顯高於菁英(原小王/大王),呼應「這隻BOSS的獎勵要豐富一點」的要求
-        const gearChance = enemy.tier === 'trueboss' ? 0.7 : enemy.tier === 'boss' ? 0.35 : enemy.tier === 'miniboss' ? 0.25 : 0.12;
-        const gearRolls = enemy.tier === 'trueboss' ? 2 : 1;
-        for (let i = 0; i < gearRolls; i += 1) {
-          if (Math.random() < gearChance) {
-            const gear = generateCommonGear(enemy.level);
-            save.inventory.push(gear);
-            drops.push(`裝備:${gear.name}`);
-          }
-        }
-        // 菁英(miniboss/boss)/真王額外有機率掉落「套裝」專屬部位(武器依玩家職業生成對應版本,
-        // 防具/副手/飾品職業通用),呼應「菁英/大BOSS也要有裝備,且要有套裝效果」的要求。
-        if (enemy.tier === 'miniboss' || enemy.tier === 'boss' || enemy.tier === 'trueboss') {
-          const setId = enemy.tier === 'trueboss' ? `trueboss_${combat.mapId}` : `elite_${combat.mapId}`;
-          const setChance = enemy.tier === 'trueboss' ? 0.5 : 0.2;
-          if (Math.random() < setChance) {
-            const slots = getSetTemplatesFor(setId).map((t) => t.slot);
-            const uniqueSlots = [...new Set(slots)];
-            const pickedSlot = uniqueSlots[Math.floor(Math.random() * uniqueSlots.length)];
-            const setGear = instantiateSetGear(setId, pickedSlot, save.classId);
-            if (setGear) {
-              save.inventory.push(setGear);
-              const setInfo = getSetInfo(setId);
-              drops.push(`套裝:${setGear.name}(屬於「${setInfo?.name || setId}」,集滿${setInfo?.pieces || '?'}件解鎖全部套裝效果)`);
-            }
-          }
+        // 一般裝備掉落:一般小怪維持既有機率,菁英/真王不再直接掉落套裝成品(改為保底掉落套裝材料,
+        // 見 monsterData.js 的 eliteShardDrop/trueBossCrystalDrop,材料需拿去對應商店製作成套裝裝備)。
+        const gearChance = enemy.tier === 'boss' ? 0.35 : enemy.tier === 'miniboss' ? 0.25 : 0.12;
+        if (Math.random() < gearChance) {
+          const gear = generateCommonGear(enemy.level);
+          save.inventory.push(gear);
+          drops.push(`裝備:${gear.name}`);
         }
       });
       const finalExp = Math.max(1, Math.round(totalExp * rewardPenalty));
@@ -882,10 +863,22 @@ export default function gameRoutes() {
   router.get('/shop/:shopId', async (req, res) => {
     const shop = getShop(req.params.shopId);
     if (!shop) return res.status(404).json({ error: '無此商店' });
-    if (shop.id === 'general') {
-      return res.json({ shop, market: await getMarketSnapshot() });
-    }
     const save = await loadSave(req.user.userId);
+    // 套裝配方(菁英/真王):武器/副手依職業限定,只給玩家看得到自己能用的版本(防具/飾品職業通用,
+    // classType 為 null 一律保留)。材料需求同樣補上中文名稱+目前持有量,跟一般配方格式一致。
+    const setRecipes = getSetRecipesForShop(shop.id)
+      .filter((r) => !r.classType || r.classType === save.classId)
+      .map((r) => ({
+        ...r,
+        tierLabel: getTierNameZh(r.tier),
+        setName: getSetInfo(r.setId)?.name,
+        materialsDetail: Object.entries(r.materials).map(([matId, need]) => ({
+          id: matId, name: getItem(matId)?.name || matId, need, have: save.materials[matId] || 0,
+        })),
+      }));
+    if (shop.id === 'general') {
+      return res.json({ shop, market: await getMarketSnapshot(), setRecipes });
+    }
     // 配方的材料需求原本只有英文 id,前端無法直接顯示——這裡補上中文名稱與玩家目前持有數量,
     // 前端就能直接秀出「鐵礦 3/5」這種一目瞭然的格式,不用自己再查一次物品表。
     const recipes = getRareRecipes(shop.id).map((r) => ({
@@ -895,7 +888,7 @@ export default function gameRoutes() {
         id: matId, name: getItem(matId)?.name || matId, need, have: save.materials[matId] || 0,
       })),
     }));
-    res.json({ shop, recipes });
+    res.json({ shop, recipes, setRecipes });
   });
 
   // 雜貨店回收:賣雜物/一般素材/稀有素材(是否留著製作或賣錢由玩家自行決定)或賣掉背包中的普通裝備
@@ -915,7 +908,7 @@ export default function gameRoutes() {
       return res.json({ state: publicState(save), earned: price });
     }
     const item = getItem(itemId);
-    if (!item || !['junk', 'material', 'rare_material', 'party_material'].includes(item.kind)) return res.status(400).json({ error: '此物品無法回收' });
+    if (!item || !['junk', 'material', 'rare_material', 'party_material', 'set_material'].includes(item.kind)) return res.status(400).json({ error: '此物品無法回收' });
     const have = save.materials[itemId] || 0;
     const sellQty = Math.min(Math.max(1, qty || 1), have);
     if (sellQty <= 0) return res.status(400).json({ error: '數量不足' });
@@ -1005,14 +998,17 @@ export default function gameRoutes() {
     res.json({ state: publicState(save), upgraded: result.upgraded, item });
   });
 
-  // 稀有裝備製作:僅能在對應商店(blacksmith/leather/magic/church)進行,只看素材+金幣是否足夠,
-  // 不設等級門檻——有材料就能做,不因為等級不夠而卡關。
+  // 裝備製作:稀有配方(blacksmith/leather/magic/church)與套裝配方(elite/trueboss set,
+  // 消耗地圖專屬材料)共用同一個入口——先查稀有配方清單,找不到再查套裝配方清單。
+  // 兩者都只看素材+金幣是否足夠,不設等級門檻,有材料就能做。
   router.post('/shop/craft', async (req, res) => {
     const { shopId, recipeId } = req.body || {};
-    const recipes = getRareRecipes(shopId);
-    const recipe = recipes.find((r) => r.id === recipeId);
-    if (!recipe) return res.status(400).json({ error: '無此配方' });
     const save = await loadSave(req.user.userId);
+    const rareRecipe = getRareRecipes(shopId).find((r) => r.id === recipeId);
+    const setRecipe = rareRecipe ? null : getSetRecipeById(shopId, recipeId);
+    const recipe = rareRecipe || setRecipe;
+    if (!recipe) return res.status(400).json({ error: '無此配方' });
+    if (recipe.classType && recipe.classType !== save.classId) return res.status(400).json({ error: '職業不符,無法製作此配方' });
     if (save.gold < recipe.gold) return res.status(400).json({ error: '金幣不足' });
     const missing = Object.entries(recipe.materials).filter(([matId, need]) => (save.materials[matId] || 0) < need);
     if (missing.length > 0) {
@@ -1021,7 +1017,7 @@ export default function gameRoutes() {
     }
     save.gold -= recipe.gold;
     Object.entries(recipe.materials).forEach(([matId, need]) => { save.materials[matId] -= need; });
-    const item = craftRareItem(shopId, recipe);
+    const item = rareRecipe ? craftRareItem(shopId, recipe) : craftSetItem(recipe);
     save.inventory.push(item);
     addLog(save, `於${getShop(shopId).name}打造出「${item.name}」!`);
     await saveGame(req.user.userId, save);

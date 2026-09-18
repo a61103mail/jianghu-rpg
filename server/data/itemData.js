@@ -38,9 +38,19 @@ export const ITEMS = {
   // 從單純「刷完全部單人大王」再往上加一道「你也要真的組隊打過王」的門檻,讓組隊本身有不可取代的價值。
   party_seal: { id: 'party_seal', name: '團隊戰印', kind: 'party_material', basePrice: 150 },
 
-  // ---- 真王結晶(僅每張地圖的真王掉落,全服共用重生計時,取得難度遠高於一般小王/大王)----
-  // 供未來更高階配方使用,目前先作為真王掉落的終極獎勵材料，賣給雜貨店的價值也遠高於其他所有材料。
-  trueboss_crystal: { id: 'trueboss_crystal', name: '真王結晶', kind: 'trueboss_material', basePrice: 400 },
+  // ---- 套裝製作素材(每張地圖各自專屬,菁英/真王擊敗保底掉落1~3個,不會出現0個的坑爹情況)----
+  // 菁英碎片用於在對應商店製作該地圖的「菁英套裝」(2部位:武器+防具);
+  // 真王結晶用於製作該地圖的「真王套裝」(4部位:武器+防具+副手+飾品),見 setGearData.js 的配方定義。
+  elite_shard_novice_plains: { id: 'elite_shard_novice_plains', name: '新手平原菁英碎片', kind: 'set_material', basePrice: 60 },
+  elite_shard_goblin_forest: { id: 'elite_shard_goblin_forest', name: '哥布林森林菁英碎片', kind: 'set_material', basePrice: 90 },
+  elite_shard_stone_mines: { id: 'elite_shard_stone_mines', name: '石化礦坑菁英碎片', kind: 'set_material', basePrice: 120 },
+  elite_shard_dark_swamp: { id: 'elite_shard_dark_swamp', name: '幽暗沼澤菁英碎片', kind: 'set_material', basePrice: 150 },
+  elite_shard_ruined_borderlands: { id: 'elite_shard_ruined_borderlands', name: '遺跡邊境菁英碎片', kind: 'set_material', basePrice: 180 },
+  trueboss_crystal_novice_plains: { id: 'trueboss_crystal_novice_plains', name: '上古樹靈王真王結晶', kind: 'set_material', basePrice: 200 },
+  trueboss_crystal_goblin_forest: { id: 'trueboss_crystal_goblin_forest', name: '哥布林大帝真王結晶', kind: 'set_material', basePrice: 280 },
+  trueboss_crystal_stone_mines: { id: 'trueboss_crystal_stone_mines', name: '深淵岩龍真王結晶', kind: 'set_material', basePrice: 360 },
+  trueboss_crystal_dark_swamp: { id: 'trueboss_crystal_dark_swamp', name: '太古邪神真王結晶', kind: 'set_material', basePrice: 440 },
+  trueboss_crystal_ruined_borderlands: { id: 'trueboss_crystal_ruined_borderlands', name: '太初神皇真王結晶', kind: 'set_material', basePrice: 520 },
 };
 
 export function getItem(id) {

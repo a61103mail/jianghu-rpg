@@ -13,8 +13,7 @@ const BOSS_ENHANCE_DROPS = [
   { id: 'scroll_accessory', kind: 'scroll', chance: 0.2, min: 1, max: 1 },
   { id: 'cube_potential', kind: 'cube', chance: 0.15, min: 1, max: 1 },
 ];
-// 真王(每張地圖獨一無二的終極首領)掉落:比小王/大王更豐厚,機率與數量皆明顯提高,
-// 額外保底掉落真王結晶(trueboss_crystal,供未來更高階配方使用的終極材料)。
+// 真王(每張地圖獨一無二的終極首領)掉落:比小王/大王更豐厚,機率與數量皆明顯提高。
 const TRUEBOSS_ENHANCE_DROPS = [
   { id: 'scroll_weapon', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
   { id: 'scroll_armor', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
@@ -22,7 +21,15 @@ const TRUEBOSS_ENHANCE_DROPS = [
   { id: 'scroll_accessory', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
   { id: 'cube_potential', kind: 'cube', chance: 0.3, min: 1, max: 1 },
 ];
-const TRUEBOSS_CRYSTAL_DROP = { id: 'trueboss_crystal', kind: 'trueboss_material', chance: 0.6, min: 1, max: 2 };
+// 套裝製作素材保底掉落(chance:1,100%必定掉落,只有數量1~3隨機)——菁英(miniboss/boss)掉落
+// 該地圖的「菁英碎片」,真王掉落「真王結晶」,兩者皆用於在商店製作對應套裝(見 setGearData.js)。
+// 不用機率判定是否掉落,避免玩家打贏王卻什麼套裝素材都沒拿到的坑爹情況。
+function eliteShardDrop(mapId) {
+  return { id: `elite_shard_${mapId}`, kind: 'set_material', chance: 1, min: 1, max: 3 };
+}
+function trueBossCrystalDrop(mapId) {
+  return { id: `trueboss_crystal_${mapId}`, kind: 'set_material', chance: 1, min: 1, max: 3 };
+}
 
 // 小王/大王的戰鬥機制(一般小怪不套用,維持簡單):
 // - physicalResistPct / magicResistPct:對該傷害類型的抗性(正值減傷、負值代表弱點增傷),
@@ -58,6 +65,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'slime_core', kind: 'rare_material', shop: 'magic', chance: 0.4, min: 1, max: 1 },
       { id: 'slime_jelly', kind: 'junk', chance: 1, min: 3, max: 6 },
+      eliteShardDrop('novice_plains'),
       ...MINIBOSS_ENHANCE_DROPS,
     ],
   },
@@ -69,13 +77,14 @@ export const MONSTERS = {
     dropTable: [
       { id: 'boar_fang', kind: 'rare_material', shop: 'blacksmith', chance: 0.5, min: 1, max: 2 },
       { id: 'boar_hide', kind: 'junk', chance: 1, min: 4, max: 8 },
+      eliteShardDrop('novice_plains'),
       ...BOSS_ENHANCE_DROPS,
     ],
     // 組隊限定加成掉落:只有在組隊副本擊敗這隻王才有機會拿到,單人闖蕩/決鬥不會出現(見 partyEngine.js)
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
-  // 真王(每張地圖獨一無二的終極首領,強度抓在「兩張地圖之後」的量級):不是隨機遭遇,
-  // 要在地圖畫面主動點擊挑戰,全服共用重生計時(見 worldBossEngine.js),不是個人各自獨立進度。
+  // 真王(每張地圖獨一無二的終極首領,強度抓在「兩張地圖之後」的量級):不是明確挑戰按鈕,
+  // 一樣是隨機遭遇(機率遠低於菁英),全服共用重生計時(見 worldBossEngine.js),不是個人各自獨立進度。
   ancient_treant_king: {
     id: 'ancient_treant_king', name: '上古樹靈王', level: 22, hp: 1750, atk: 38, def: 27, critRate: 0.14, exp: 1900, tier: 'trueboss',
     physicalResistPct: 0.2, magicResistPct: -0.15, // 巨木軀體:硬扛物理,怕火系/魔法燃燒
@@ -85,7 +94,7 @@ export const MONSTERS = {
       { id: 'slime_core', kind: 'rare_material', shop: 'magic', chance: 0.9, min: 1, max: 2 },
       { id: 'boar_fang', kind: 'rare_material', shop: 'blacksmith', chance: 0.9, min: 1, max: 2 },
       { id: 'slime_jelly', kind: 'junk', chance: 1, min: 10, max: 16 },
-      TRUEBOSS_CRYSTAL_DROP,
+      trueBossCrystalDrop('novice_plains'),
       ...TRUEBOSS_ENHANCE_DROPS,
     ],
   },
@@ -113,6 +122,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'captain_insignia', kind: 'rare_material', shop: 'leather', chance: 0.4, min: 1, max: 1 },
       { id: 'goblin_ear', kind: 'junk', chance: 1, min: 4, max: 7 },
+      eliteShardDrop('goblin_forest'),
       ...MINIBOSS_ENHANCE_DROPS,
     ],
   },
@@ -124,6 +134,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'chieftain_totem', kind: 'rare_material', shop: 'magic', chance: 0.5, min: 1, max: 2 },
       { id: 'goblin_bow_string', kind: 'junk', chance: 1, min: 5, max: 9 },
+      eliteShardDrop('goblin_forest'),
       ...BOSS_ENHANCE_DROPS,
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
@@ -137,7 +148,7 @@ export const MONSTERS = {
       { id: 'captain_insignia', kind: 'rare_material', shop: 'leather', chance: 0.9, min: 1, max: 2 },
       { id: 'chieftain_totem', kind: 'rare_material', shop: 'magic', chance: 0.9, min: 1, max: 2 },
       { id: 'goblin_ear', kind: 'junk', chance: 1, min: 12, max: 18 },
-      TRUEBOSS_CRYSTAL_DROP,
+      trueBossCrystalDrop('goblin_forest'),
       ...TRUEBOSS_ENHANCE_DROPS,
     ],
   },
@@ -165,6 +176,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'spider_silk_gland', kind: 'rare_material', shop: 'leather', chance: 0.4, min: 1, max: 1 },
       { id: 'bat_wing', kind: 'junk', chance: 1, min: 5, max: 8 },
+      eliteShardDrop('stone_mines'),
       ...MINIBOSS_ENHANCE_DROPS,
     ],
   },
@@ -176,6 +188,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'golem_core', kind: 'rare_material', shop: 'blacksmith', chance: 0.5, min: 1, max: 2 },
       { id: 'rat_tail', kind: 'junk', chance: 1, min: 6, max: 10 },
+      eliteShardDrop('stone_mines'),
       ...BOSS_ENHANCE_DROPS,
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
@@ -189,7 +202,7 @@ export const MONSTERS = {
       { id: 'spider_silk_gland', kind: 'rare_material', shop: 'leather', chance: 0.9, min: 1, max: 2 },
       { id: 'golem_core', kind: 'rare_material', shop: 'blacksmith', chance: 0.9, min: 1, max: 2 },
       { id: 'rat_tail', kind: 'junk', chance: 1, min: 14, max: 20 },
-      TRUEBOSS_CRYSTAL_DROP,
+      trueBossCrystalDrop('stone_mines'),
       ...TRUEBOSS_ENHANCE_DROPS,
     ],
   },
@@ -217,6 +230,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'witch_charm', kind: 'rare_material', shop: 'magic', chance: 0.4, min: 1, max: 1 },
       { id: 'tentacle_ooze', kind: 'junk', chance: 1, min: 6, max: 9 },
+      eliteShardDrop('dark_swamp'),
       ...MINIBOSS_ENHANCE_DROPS,
     ],
   },
@@ -228,6 +242,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'drake_scale', kind: 'rare_material', shop: 'church', chance: 0.5, min: 1, max: 2 },
       { id: 'toad_venom_sac', kind: 'junk', chance: 1, min: 7, max: 11 },
+      eliteShardDrop('dark_swamp'),
       ...BOSS_ENHANCE_DROPS,
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
@@ -241,7 +256,7 @@ export const MONSTERS = {
       { id: 'witch_charm', kind: 'rare_material', shop: 'magic', chance: 0.9, min: 1, max: 2 },
       { id: 'drake_scale', kind: 'rare_material', shop: 'church', chance: 0.9, min: 1, max: 2 },
       { id: 'tentacle_ooze', kind: 'junk', chance: 1, min: 16, max: 22 },
-      TRUEBOSS_CRYSTAL_DROP,
+      trueBossCrystalDrop('dark_swamp'),
       ...TRUEBOSS_ENHANCE_DROPS,
     ],
   },
@@ -269,6 +284,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'knight_emblem', kind: 'rare_material', shop: 'blacksmith', chance: 0.45, min: 1, max: 1 },
       { id: 'guardian_plating', kind: 'junk', chance: 1, min: 7, max: 10 },
+      eliteShardDrop('ruined_borderlands'),
       ...MINIBOSS_ENHANCE_DROPS,
     ],
   },
@@ -280,6 +296,7 @@ export const MONSTERS = {
     dropTable: [
       { id: 'king_crown_shard', kind: 'rare_material', shop: 'church', chance: 0.55, min: 1, max: 2 },
       { id: 'shadow_fragment', kind: 'junk', chance: 1, min: 8, max: 12 },
+      eliteShardDrop('ruined_borderlands'),
       ...BOSS_ENHANCE_DROPS,
     ],
     partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
@@ -293,7 +310,7 @@ export const MONSTERS = {
       { id: 'knight_emblem', kind: 'rare_material', shop: 'blacksmith', chance: 0.9, min: 1, max: 2 },
       { id: 'king_crown_shard', kind: 'rare_material', shop: 'church', chance: 0.9, min: 1, max: 2 },
       { id: 'shadow_fragment', kind: 'junk', chance: 1, min: 18, max: 25 },
-      { ...TRUEBOSS_CRYSTAL_DROP, chance: 0.75, min: 2, max: 3 }, // 終極真王:結晶掉落機率與數量都比其他四隻更高
+      { ...trueBossCrystalDrop('ruined_borderlands'), max: 3 }, // 終極真王:結晶數量上限比其他四隻更高
       ...TRUEBOSS_ENHANCE_DROPS,
     ],
   },

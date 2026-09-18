@@ -1,6 +1,5 @@
-// 裝備生成引擎:普通裝備(monster drop)vs稀有裝備(shop craft only)vs套裝裝備(elite/trueboss drop),三軌互不重疊。
+// 裝備生成引擎:普通裝備(monster drop)vs稀有裝備(shop craft only)vs套裝裝備(elite/trueboss set,商店用材料製作),三軌互不重疊。
 import { GEAR_SLOTS, WEAPON_TYPE_BY_CLASS, OFFHAND_TYPE_BY_CLASS, ARMOR_NAMES, ACCESSORY_NAMES } from '../data/itemData.js';
-import { getSetTemplatesFor } from '../data/setGearData.js';
 
 let counter = 1;
 function nextId() {
@@ -174,28 +173,25 @@ export function createStarterMageOffhand() {
   };
 }
 
-// 套裝裝備(菁英/真王專屬掉落):依 setId + slot + classId 從範本挑一件實例化。
-// 武器/副手依職業限定(classId 決定要哪個版本),防具/飾品職業通用(classId 參數會被忽略)。
-// 數值固定不浮動(不像一般掉落/打造有隨機區間),統一給予高品質顯示,呼應「稀有掉落理應優良」。
-export function instantiateSetGear(setId, slot, classId) {
-  const templates = getSetTemplatesFor(setId, slot);
-  if (templates.length === 0) return null;
-  const template = templates.find((t) => !t.classType || t.classType === classId) || templates[0];
-  const isTrueBoss = setId.startsWith('trueboss_');
+// 套裝製作(商店消耗材料+金幣依配方製作,取代直接掉落成品——玩家打王保底拿到材料,
+// 材料帶去對應商店才能真正做出裝備)。數值固定不浮動(配方 statBonus 就是最終數值,
+// 不像一般掉落/打造有隨機區間),統一給予高品質顯示,呼應「辛苦湊材料換來的套裝理應優良」。
+export function craftSetItem(recipe) {
+  const isTrueBoss = recipe.tier === 'trueboss_set';
   return {
     id: nextId(),
-    slot: template.slot,
-    name: template.name,
-    tier: isTrueBoss ? 'trueboss_set' : 'elite_set',
-    setId,
-    classType: template.classType,
+    slot: recipe.slot,
+    name: recipe.name,
+    tier: recipe.tier,
+    setId: recipe.setId,
+    classType: recipe.classType,
     itemLevel: isTrueBoss ? 35 : 30,
-    stats: { ...template.stats },
+    stats: { ...recipe.statBonus },
     rollQuality: 0.9,
     enhanceLevel: 0,
     enhanceUses: 0,
     potential: null,
-    ...durabilityFieldsFor(template.slot),
+    ...durabilityFieldsFor(recipe.slot),
   };
 }
 

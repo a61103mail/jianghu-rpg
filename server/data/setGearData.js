@@ -133,3 +133,57 @@ export function getSetTemplatesFor(setId, slotFilter) {
 export function getSetInfo(setId) {
   return SET_INFO[setId];
 }
+
+// ---- 套裝製作配方(商店用材料+金幣製作,取代直接掉落成品)----
+// 材料保底掉落(見 monsterData.js 的 eliteShardDrop/trueBossCrystalDrop),玩家帶去對應商店製作。
+// 武器/副手依職業限定,只出現在該職業對應的商店;防具/飾品職業通用——防具在四間職業商店都能做
+// (呼應「鐵匠鋪打鎧甲」這類世界觀,任何商店都能打出同規格防具),飾品固定在雜貨店統一製作。
+const SHOP_CLASS = { blacksmith: 'warrior', leather: 'archer', magic: 'mage', church: 'priest' };
+const ELITE_WEAPON_MATS = 4, ELITE_ARMOR_MATS = 3;
+const TRUEBOSS_WEAPON_MATS = 5, TRUEBOSS_ARMOR_MATS = 4, TRUEBOSS_OFFHAND_MATS = 3, TRUEBOSS_ACCESSORY_MATS = 3;
+
+export const SET_RECIPES = {}; // shopId -> recipe[](格式對齊 RARE_RECIPES,方便前端/後端共用顯示邏輯)
+
+MAP_ORDER.forEach((mapId, idx) => {
+  const eliteSetId = `elite_${mapId}`;
+  const trueBossSetId = `trueboss_${mapId}`;
+  const eliteMatId = `elite_shard_${mapId}`;
+  const trueBossMatId = `trueboss_crystal_${mapId}`;
+  const eliteGold = 200 + idx * 100;
+  const trueBossWeaponGold = 600 + idx * 150;
+  const trueBossArmorGold = 500 + idx * 130;
+  const trueBossOffhandGold = 400 + idx * 110;
+  const trueBossAccessoryGold = 400 + idx * 110;
+
+  Object.entries(SHOP_CLASS).forEach(([shopId, classId]) => {
+    if (!SET_RECIPES[shopId]) SET_RECIPES[shopId] = [];
+    const eliteWeapon = getSetTemplatesFor(eliteSetId, 'weapon').find((t) => t.classType === classId);
+    const eliteArmor = getSetTemplatesFor(eliteSetId, 'armor')[0];
+    const tbWeapon = getSetTemplatesFor(trueBossSetId, 'weapon').find((t) => t.classType === classId);
+    const tbArmor = getSetTemplatesFor(trueBossSetId, 'armor')[0];
+    const tbOffhand = getSetTemplatesFor(trueBossSetId, 'offhand').find((t) => t.classType === classId);
+    SET_RECIPES[shopId].push(
+      { id: `craft_${eliteWeapon.id}`, name: eliteWeapon.name, slot: 'weapon', tier: 'elite_set', setId: eliteSetId, classType: classId, gold: eliteGold, materials: { [eliteMatId]: ELITE_WEAPON_MATS }, statBonus: eliteWeapon.stats },
+      { id: `craft_${eliteArmor.id}`, name: eliteArmor.name, slot: 'armor', tier: 'elite_set', setId: eliteSetId, classType: null, gold: eliteGold, materials: { [eliteMatId]: ELITE_ARMOR_MATS }, statBonus: eliteArmor.stats },
+      { id: `craft_${tbWeapon.id}`, name: tbWeapon.name, slot: 'weapon', tier: 'trueboss_set', setId: trueBossSetId, classType: classId, gold: trueBossWeaponGold, materials: { [trueBossMatId]: TRUEBOSS_WEAPON_MATS }, statBonus: tbWeapon.stats },
+      { id: `craft_${tbArmor.id}`, name: tbArmor.name, slot: 'armor', tier: 'trueboss_set', setId: trueBossSetId, classType: null, gold: trueBossArmorGold, materials: { [trueBossMatId]: TRUEBOSS_ARMOR_MATS }, statBonus: tbArmor.stats },
+      { id: `craft_${tbOffhand.id}`, name: tbOffhand.name, slot: 'offhand', tier: 'trueboss_set', setId: trueBossSetId, classType: classId, gold: trueBossOffhandGold, materials: { [trueBossMatId]: TRUEBOSS_OFFHAND_MATS }, statBonus: tbOffhand.stats }
+    );
+  });
+
+  // 飾品職業通用,固定放在雜貨店統一製作(不分職業商店)
+  if (!SET_RECIPES.general) SET_RECIPES.general = [];
+  const tbAccessory = getSetTemplatesFor(trueBossSetId, 'accessory')[0];
+  SET_RECIPES.general.push({
+    id: `craft_${tbAccessory.id}`, name: tbAccessory.name, slot: 'accessory', tier: 'trueboss_set', setId: trueBossSetId, classType: null,
+    gold: trueBossAccessoryGold, materials: { [trueBossMatId]: TRUEBOSS_ACCESSORY_MATS }, statBonus: tbAccessory.stats,
+  });
+});
+
+export function getSetRecipesForShop(shopId) {
+  return SET_RECIPES[shopId] || [];
+}
+
+export function getSetRecipeById(shopId, recipeId) {
+  return getSetRecipesForShop(shopId).find((r) => r.id === recipeId);
+}
