@@ -639,7 +639,7 @@ export default function gameRoutes() {
         const idx = Number.isInteger(targetIndex) && combat.enemies[targetIndex]?.hp > 0 ? targetIndex : combat.enemies.findIndex((e) => e.hp > 0);
         const target = combat.enemies[idx];
         if (!target) return res.status(400).json({ error: '目標無效' });
-        const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
+        const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target), critDamageMult: stats.critDamageMult });
         target.hp = Math.max(0, target.hp - amount);
         lines.push(`你施展「${skill.name}」!` + narrateAttack({ attackerName: '你', defenderName: target.name, amount, isCrit }));
         consumeWeaponDurability(save.equipment);
@@ -647,7 +647,7 @@ export default function gameRoutes() {
         lines.push(`你施展「${skill.name}」,席捲全場!`);
         combat.enemies.forEach((target) => {
           if (target.hp <= 0) return;
-          const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
+          const { amount, isCrit } = rollDamage({ level: stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target), critDamageMult: stats.critDamageMult });
           target.hp = Math.max(0, target.hp - amount);
           lines.push(narrateAttack({ attackerName: '你', defenderName: target.name, amount, isCrit }));
         });
@@ -719,7 +719,8 @@ export default function gameRoutes() {
       });
       combat.buffs = tickBuffs(combat.buffs);
 
-      // 光環(被動)技能的每回合持續效果:法師真力回流、牧師氣血祝福,需等級達到 unlockLevel 才會生效
+      // 光環(被動)技能的每回合持續效果:法師真力回流,需等級達到 unlockLevel 才會生效
+      // (hpRegenPct 是通用機制,目前沒有職業使用,保留供未來擴充)。
       const aura = cls.skills.aura;
       if (save.level >= aura.unlockLevel && combat.playerHp > 0) {
         if (aura.effect.mpRegenPerTurn) {
@@ -991,21 +992,21 @@ export default function gameRoutes() {
     return save.inventory.find((i) => i.id === itemId) || null;
   }
 
-  // 裝備強化:每件裝備最多使用 5 次卷軸,每次全部現有屬性一起 ±3(百分比類屬性為±3個百分點),
-  // 50/50 機率決定這次是加強還是削弱——不是穩定往上疊的系統,是真正有賭注的強化,運氣差可能讓
-  // 裝備比原本更差,運氣好則能大幅超越基礎數值。
+  // 裝備強化:每件裝備最多使用 5 次卷軸,一般卷軸每次全部現有屬性一起 -3~+3(百分比類屬性為
+  // 百分點),王家卷軸(只有真王掉落)則是 -1~+5,範圍更好——不是穩定往上疊的系統,是真正有賭注
+  // 的強化,運氣差可能讓裝備比原本更差,運氣好則能大幅超越基礎數值。
   router.post('/equipment/enhance', async (req, res) => {
     const { itemId, scrollId } = req.body || {};
     const save = await loadSave(req.user.userId);
     const item = findEquippedOrInventoryItem(save, itemId);
     if (!item) return res.status(404).json({ error: '找不到該裝備' });
     const scroll = getEnhanceItem(scrollId);
-    if (!scroll || scroll.kind !== 'scroll') return res.status(400).json({ error: '無此強化卷軸' });
+    if (!scroll || (scroll.kind !== 'scroll' && scroll.kind !== 'scroll_royal')) return res.status(400).json({ error: '無此強化卷軸' });
     if (!getEnhanceItemAppliesToSlot(scroll.appliesTo, item.slot)) return res.status(400).json({ error: '此卷軸不適用於該裝備部位' });
     if ((save.consumables[scrollId] || 0) < 1) return res.status(400).json({ error: '卷軸數量不足' });
     if ((item.enhanceUses || 0) >= ENHANCE_MAX_USES) return res.status(400).json({ error: `已達強化次數上限(${ENHANCE_MAX_USES}/${ENHANCE_MAX_USES})` });
     save.consumables[scrollId] -= 1;
-    const result = rollEnhance(item);
+    const result = rollEnhance(item, scroll.kind === 'scroll_royal');
     const levelText = item.enhanceLevel >= 0 ? `+${item.enhanceLevel}` : `${item.enhanceLevel}`;
     const deltaText = result.delta > 0 ? `+${result.delta}` : `${result.delta}`;
     // delta 是 -3~+3 均勻隨機,0 代表這次沒有任何效果(不算加強也不算削弱),要跟真正的加強/削弱分開講清楚

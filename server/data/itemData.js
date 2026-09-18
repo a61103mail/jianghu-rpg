@@ -19,7 +19,7 @@ export const ITEMS = {
   rough_leather: { id: 'rough_leather', name: '粗製獸皮', kind: 'material', shop: 'leather', basePrice: 6 },
   feather: { id: 'feather', name: '羽毛', kind: 'material', shop: 'leather', basePrice: 6 },
   crystal_shard: { id: 'crystal_shard', name: '魔力碎晶', kind: 'material', shop: 'magic', basePrice: 9 },
-  holy_water: { id: 'holy_water', name: '聖水', kind: 'material', shop: 'church', basePrice: 10 },
+  holy_water: { id: 'holy_water', name: '淬毒液', kind: 'material', shop: 'church', basePrice: 10 },
 
   // ---- 稀有素材(僅小王/大王掉落,製作稀有/超稀有裝備專用;賣給雜貨店的價格遠高於一般素材,反映其稀有度)----
   slime_core: { id: 'slime_core', name: '史萊姆核心', kind: 'rare_material', shop: 'magic', basePrice: 20 },
@@ -63,17 +63,18 @@ export const GEAR_SLOTS = ['weapon', 'armor', 'offhand', 'accessory1', 'accessor
 export const WEAPON_TYPE_BY_CLASS = {
   warrior: { type: 'sword', names: ['鐵劍', '闊刃斧', '戰錘'], shop: 'blacksmith', atkKey: 'atk' },
   mage: { type: 'staff', names: ['木杖', '法杖', '魔導書'], shop: 'magic', atkKey: 'matk' },
-  priest: { type: 'mace', names: ['聖錘', '聖典', '牧杖'], shop: 'church', atkKey: 'matk' },
+  rogue: { type: 'dagger', names: ['匕首', '雙刃', '暗殺爪'], shop: 'church', atkKey: 'atk' },
   archer: { type: 'bow', names: ['短弓', '長弓', '弩'], shop: 'leather', atkKey: 'atk' },
 };
 
 // 副手裝備(新增部位):主要提供生存數值(氣血/防禦)+ 少量攻擊值,武器一樣依職業鎖定。
 // 法師的副手是特例——額外附帶「真氣減傷%」(magicDamageReductionPct,固定生效的傷害減免,
-// 見 combatEngine.js),取代其他職業靠格擋值(blockRatePct)生存的機制。
+// 見 combatEngine.js),取代其他職業靠格擋值(blockRatePct)生存的機制。盜賊的副手同樣是特例——
+// 不給任何防禦手段,而是附帶「會心傷害%」(critDamagePct),呼應盜賊皮薄但爆發傷害極高的定位。
 export const OFFHAND_TYPE_BY_CLASS = {
   warrior: { names: ['小圓盾', '鳶盾', '塔盾'], shop: 'blacksmith' },
   mage: { names: ['魔導書副冊', '秘紋法印', '奧術聖典'], shop: 'magic' },
-  priest: { names: ['聖徽副手', '聖光聖典', '天啟聖書'], shop: 'church' },
+  rogue: { names: ['淬毒暗器囊', '影襲徽記', '死神低語'], shop: 'church' },
   archer: { names: ['箭袋', '強化弓弦', '獵人護臂'], shop: 'leather' },
 };
 
@@ -87,8 +88,8 @@ export const ACCESSORY_NAMES = ['護符', '戒指', '項鍊', '徽章'];
 // 材料取得難度則完全反映在「要打贏哪隻小王/大王」與「材料需求量」上,兩者分開設計避免混淆。
 //
 // 重要:稀有/超稀有階的「稀有素材」需求對四間商店一律相同(見 RARE_TIER_BOSS_MATS / EPIC_TIER_BOSS_MATS)——
-// 打贏哪隻王對所有職業都一樣重要,不會出現「戰士打贏第一章大王有用,牧師打贏卻完全用不到」這種不公平狀況。
-// 各商店真正的差異只在於各自的「一般素材」(鐵礦/獸皮羽毛/魔力碎晶/聖水)與裝備名稱、屬性類型(atk/matk)。
+// 打贏哪隻王對所有職業都一樣重要,不會出現「戰士打贏第一章大王有用,盜賊打贏卻完全用不到」這種不公平狀況。
+// 各商店真正的差異只在於各自的「一般素材」(鐵礦/獸皮羽毛/魔力碎晶/淬毒液)與裝備名稱、屬性類型(atk/matk)。
 const RARE_TIER_BOSS_MATS = { slime_core: 1, boar_fang: 1 }; // 第一章(新手平原)小王+大王,稀有階入門門檻
 const EPIC_TIER_BOSS_MATS = {
   captain_insignia: 1, chieftain_totem: 1, spider_silk_gland: 1, golem_core: 1,
@@ -101,13 +102,14 @@ const TIER_STATS = {
   epic: { weaponAtk: 47, armorDef: 34, armorHp: 109, accCritPct: 6.6, accHp: 66, accDex: 34 },
 };
 // 副手三階數值:生存向(氣血/防禦約為防具一半)+ 少量攻擊值(約武器三分之一)。
-// 三個職業特色屬性各自用途:blockPct(戰士/牧師格擋率)、evasionPct(弓箭手迴避率)都是
-// 隨階層遞增的百分點加成;法師改用固定 50% 真氣減傷(不因強化/潛能/套裝疊加,三階數值皆
-// 相同,見 characterEngine.js——固定生效判斷只看 classId,這裡的數值僅供裝備欄顯示用)。
+// 職業特色屬性各自用途:blockPct(戰士格擋率)、evasionPct(弓箭手迴避率)都是隨階層遞增的
+// 百分點加成;法師改用固定 50% 真氣減傷(不因強化/潛能/套裝疊加,三階數值皆相同,見
+// characterEngine.js——固定生效判斷只看 classId,這裡的數值僅供裝備欄顯示用);盜賊的副手
+// 不給任何防禦手段,改給 critDamagePct(會心傷害%,疊加在基礎1.6倍會心倍率上,見 combatEngine.js)。
 const OFFHAND_TIER_STATS = {
-  common: { hp: 23, def: 7, atk: 7, blockPct: 3, evasionPct: 3, magicReductionPct: 50 },
-  rare: { hp: 37, def: 11, atk: 10, blockPct: 5, evasionPct: 5, magicReductionPct: 50 },
-  epic: { hp: 55, def: 17, atk: 16, blockPct: 7, evasionPct: 7, magicReductionPct: 50 },
+  common: { hp: 23, def: 7, atk: 7, blockPct: 3, evasionPct: 3, magicReductionPct: 50, critDamagePct: 15 },
+  rare: { hp: 37, def: 11, atk: 10, blockPct: 5, evasionPct: 5, magicReductionPct: 50, critDamagePct: 25 },
+  epic: { hp: 55, def: 17, atk: 16, blockPct: 7, evasionPct: 7, magicReductionPct: 50, critDamagePct: 38 },
 };
 const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有', elite_set: '菁英套裝', trueboss_set: '真王套裝' };
 
@@ -118,6 +120,7 @@ function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold, offhan
   const recipes = [];
   const isMage = shopId === 'magic';
   const isArcher = shopId === 'leather';
+  const isRogue = shopId === 'church';
   ['common', 'rare', 'epic'].forEach((tier) => {
     const s = TIER_STATS[tier];
     const o = OFFHAND_TIER_STATS[tier];
@@ -131,6 +134,8 @@ function buildShopRecipes(shopId, atkKey, names, tierMaterials, tierGold, offhan
       offhandStatBonus = { hp: o.hp, [atkKey]: o.atk, magicDamageReductionPct: o.magicReductionPct };
     } else if (isArcher) {
       offhandStatBonus = { hp: o.hp, def: o.def, [atkKey]: o.atk, evasionRatePct: o.evasionPct };
+    } else if (isRogue) {
+      offhandStatBonus = { hp: o.hp, [atkKey]: o.atk, critDamagePct: o.critDamagePct };
     } else {
       offhandStatBonus = { hp: o.hp, def: o.def, [atkKey]: o.atk, blockRatePct: o.blockPct };
     }
@@ -189,11 +194,11 @@ export const RARE_RECIPES = {
     { common: '魔導書副冊', rare: '史萊姆秘紋法印', epic: '女巫奧術聖典' }
   ),
   church: buildShopRecipes(
-    'church', 'matk',
+    'church', 'atk',
     {
-      common: { weapon: '聖杖', armor: '見習聖袍', acc1: '聖水護符', acc2: '信仰手環', acc3: '聖水疾行環' },
-      rare: { weapon: '聖水法錘', armor: '聖水聖袍', acc1: '聖水戒', acc2: '聖水腰帶', acc3: '聖水迅捷靴' },
-      epic: { weapon: '龍鱗聖錘', armor: '龍鱗聖甲', acc1: '王冠聖珠', acc2: '王冠聖環', acc3: '龍鱗疾影靴' },
+      common: { weapon: '淬毒匕首', armor: '夜行輕甲', acc1: '暗影護符', acc2: '敏捷手環', acc3: '暗影疾行環' },
+      rare: { weapon: '淬毒雙刃', armor: '暗殺輕甲', acc1: '淬毒戒指', acc2: '夜行者腰帶', acc3: '暗影迅捷靴' },
+      epic: { weapon: '龍鱗噬魂爪', armor: '龍鱗夜行服', acc1: '王冠暗影珠', acc2: '王冠疾影環', acc3: '龍鱗無聲靴' },
     },
     {
       common: { holy_water: 5 },
@@ -201,7 +206,7 @@ export const RARE_RECIPES = {
       epic: { ...EPIC_TIER_BOSS_MATS, holy_water: 12 },
     },
     { common: 25, rare: 150, epic: 700 },
-    { common: '聖水聖徽副手', rare: '聖水聖光聖典', epic: '龍鱗天啟聖書' }
+    { common: '淬毒暗器囊', rare: '影襲徽記', epic: '龍鱗死神低語' }
   ),
 };
 
@@ -229,19 +234,27 @@ export function getPotion(id) {
 
 // 裝備強化用消耗品:雜貨店固定金幣購買,套用於 enhanceEngine.js。
 // 卷軸:依部位分四種(武器/防具/副手/飾品),強化成功會 +1 強化等級並增加固定數值,失敗只損失卷軸本身(不會破壞裝備)。
+// 王家卷軸(scroll_*_royal):只有真王才會掉落,不開放商店購買(price:0,不列入商店供應清單)——
+// 數值範圍比一般卷軸更好(-1~+5 vs 一般卷軸 -3~+3),期望值更高、最壞情況的下跌幅度也更小,
+// 呼應「菁英只掉簡單卷軸,真王才掉更強的卷軸」。
 // 方塊:洗裝備的「潛能」(隨機百分比詞條),不分部位、任何裝備都能用,見 enhanceEngine.js 的機率與詞條池。
 // 抉擇方塊(cube_potential_choice):比一般潛能方塊更貴的高階版本——固定直接洗出3條詞條(不像
 // 一般方塊要先洗到傳說階才有3條),且採「先預覽再選擇」流程:玩家可以看過這次洗出的3條新詞條後,
 // 自己選擇要套用新的還是保留原本的潛能,不滿意可以直接放棄(但方塊已消耗,見 enhanceEngine.js)。
+// 只有菁英以上的王才會掉(0~2個,不保底),不開放商店購買。
 export const ENHANCE_ITEMS = {
   scroll_weapon: { id: 'scroll_weapon', name: '武器強化卷軸', kind: 'scroll', appliesTo: 'weapon', price: 60 },
   scroll_armor: { id: 'scroll_armor', name: '防具強化卷軸', kind: 'scroll', appliesTo: 'armor', price: 60 },
   scroll_offhand: { id: 'scroll_offhand', name: '副手強化卷軸', kind: 'scroll', appliesTo: 'offhand', price: 60 },
   scroll_accessory: { id: 'scroll_accessory', name: '飾品強化卷軸', kind: 'scroll', appliesTo: 'accessory', price: 60 },
+  scroll_weapon_royal: { id: 'scroll_weapon_royal', name: '王家武器卷軸', kind: 'scroll_royal', appliesTo: 'weapon', price: 0 },
+  scroll_armor_royal: { id: 'scroll_armor_royal', name: '王家防具卷軸', kind: 'scroll_royal', appliesTo: 'armor', price: 0 },
+  scroll_offhand_royal: { id: 'scroll_offhand_royal', name: '王家副手卷軸', kind: 'scroll_royal', appliesTo: 'offhand', price: 0 },
+  scroll_accessory_royal: { id: 'scroll_accessory_royal', name: '王家飾品卷軸', kind: 'scroll_royal', appliesTo: 'accessory', price: 0 },
   cube_potential: { id: 'cube_potential', name: '潛能方塊', kind: 'cube', appliesTo: 'any', price: 150 },
   cube_potential_choice: { id: 'cube_potential_choice', name: '抉擇方塊', kind: 'cube_choice', appliesTo: 'any', price: 320 },
 };
-export const ENHANCE_ITEM_ORDER = ['scroll_weapon', 'scroll_armor', 'scroll_offhand', 'scroll_accessory', 'cube_potential', 'cube_potential_choice'];
+export const ENHANCE_ITEM_ORDER = ['scroll_weapon', 'scroll_armor', 'scroll_offhand', 'scroll_accessory', 'scroll_weapon_royal', 'scroll_armor_royal', 'scroll_offhand_royal', 'scroll_accessory_royal', 'cube_potential', 'cube_potential_choice'];
 
 export function getEnhanceItem(id) {
   return ENHANCE_ITEMS[id];
@@ -252,7 +265,7 @@ export const SHOPS = {
   blacksmith: { id: 'blacksmith', name: '鐵匠鋪', desc: '主副武器與重型裝甲,戰士的根據地。', classAffinity: 'warrior' },
   leather: { id: 'leather', name: '皮革店', desc: '輕型武器與皮甲,弓箭手的補給站。', classAffinity: 'archer' },
   magic: { id: 'magic', name: '法術店', desc: '法杖與法袍,法師的修行之處。', classAffinity: 'mage' },
-  church: { id: 'church', name: '教堂', desc: '聖器與聖袍,牧師的信仰之地。', classAffinity: 'priest' },
+  church: { id: 'church', name: '黑市', desc: '匕首與暗器,盜賊私下交易的地下據點。', classAffinity: 'rogue' },
   general: { id: 'general', name: '雜貨店', desc: '販賣藥水與強化卷軸/潛能方塊,也回收各種戰利品雜物。', classAffinity: null },
 };
 export const SHOP_ORDER = ['blacksmith', 'leather', 'magic', 'church', 'general'];

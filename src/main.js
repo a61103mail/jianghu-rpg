@@ -22,7 +22,7 @@ const STAT_LABEL_ZH = {
   atk: '攻擊力', matk: '魔法攻擊力', def: '防禦力', hp: '氣血上限', mp: '真力上限',
   critRatePct: '會心率', hpRegenPct: '氣血回復', atkPowerPct: '攻擊強度', defPct: '防禦', hpPct: '氣血',
   str: '力量', dex: '敏捷', int: '智力', luk: '幸運',
-  blockRatePct: '格擋率', magicDamageReductionPct: '真氣減傷',
+  blockRatePct: '格擋率', magicDamageReductionPct: '真氣減傷', evasionRatePct: '迴避率', critDamagePct: '會心傷害',
 };
 function statLabelZh(key) { return STAT_LABEL_ZH[key] || key; }
 function statsText(stats) {
@@ -33,6 +33,31 @@ function statsText(stats) {
     const isPct = k.toLowerCase().includes('pct');
     return `${statLabelZh(k)}${v >= 0 ? '+' : ''}${v}${isPct ? '%' : ''}`;
   }).join('、');
+}
+
+// 裝備比較:算出「這件裝備」跟「另一件(通常是目前裝備中同部位的那件)」逐項屬性的差值,
+// 讓玩家不用自己心算兩件裝備的數值就能直接看出哪件比較強。只列出兩邊至少一方有值的屬性,
+// 差值為0(完全一樣)的屬性不顯示,避免版面塞滿一堆「+0」的雜訊。
+function diffItemStats(newStats, otherStats) {
+  const diff = {};
+  const keys = new Set([...Object.keys(newStats || {}), ...Object.keys(otherStats || {})]);
+  keys.forEach((k) => {
+    const d = Math.round(((newStats?.[k] || 0) - (otherStats?.[k] || 0)) * 1000) / 1000;
+    if (d !== 0) diff[k] = d;
+  });
+  return diff;
+}
+// 把比較差值渲染成一行帶顏色的文字:更強(正值)綠色、更弱(負值)紅色,一眼就能判斷該不該換裝。
+function renderStatDiff(label, diff) {
+  const entries = Object.entries(diff);
+  if (entries.length === 0) return null;
+  return h('div', { style: 'font-size:12px;margin-top:2px;' }, [
+    h('span', { class: 'hint' }, `${label}:`),
+    ...entries.map(([k, v]) => {
+      const isPct = k.toLowerCase().includes('pct');
+      return h('span', { style: `color:${v > 0 ? '#4ade80' : '#f87171'};margin-left:6px;` }, `${statLabelZh(k)}${v >= 0 ? '+' : ''}${v}${isPct ? '%' : ''}`);
+    }),
+  ]);
 }
 function classNameZh(classId) {
   return S.classes.find((c) => c.id === classId)?.name || classId;
@@ -148,9 +173,11 @@ function statBlock(stats) {
     h('div', {}, [h('b', {}, '防禦 '), String(stats.def)]),
     h('div', {}, [h('b', {}, '會心 '), `${Math.round(stats.critRate * 100)}%`]),
     h('div', {}, [h('b', {}, '迴避 '), `${Math.round((stats.evasionRate || 0) * 100)}%`]),
-    // 格擋/真氣減傷互斥(戰士牧師走格擋,法師走副手真氣減傷),沒有的一方為0時不顯示,避免版面塞滿無意義的「0%」
+    // 格擋/真氣減傷互斥(戰士走格擋,法師走副手真氣減傷),沒有的一方為0時不顯示,避免版面塞滿無意義的「0%」
     stats.blockRatePct > 0 ? h('div', {}, [h('b', {}, '格擋 '), `${Math.round(stats.blockRatePct * 100)}%`]) : null,
     stats.magicDamageReductionPct > 0 ? h('div', {}, [h('b', {}, '真氣減傷 '), `${Math.round(stats.magicDamageReductionPct * 100)}%`]) : null,
+    // 會心傷害倍率:預設1.6倍,只有盜賊有機會透過副手/套裝推更高,超過基礎值才顯示,避免其他職業也看到一堆無意義的固定「160%」
+    stats.critDamageMult > 1.6 ? h('div', {}, [h('b', {}, '會心傷害 '), `${Math.round(stats.critDamageMult * 100)}%`]) : null,
   ]);
 }
 
@@ -734,12 +761,19 @@ function potentialLine(item) {
 // 強化(卷軸)常數:須與後端 enhanceEngine.js 完全一致,純供前端顯示文字用。
 // 新制不再是「穩定往上疊、成功率隨等級遞減」,而是每次從 -3~+3(共7個整數,機率均等)隨機抽一個
 // 變動量,套用到裝備上每一項現有屬性一起變動,每件裝備最多用滿 5 次。
+// 王家卷軸(只有真王掉落,不開放商店購買)範圍是 -1~+5,比一般卷軸更好。
 const ENHANCE_MAX_USES = 5;
 function slotToScrollId(slot) {
   if (slot === 'weapon') return 'scroll_weapon';
   if (slot === 'armor') return 'scroll_armor';
   if (slot === 'offhand') return 'scroll_offhand';
   return 'scroll_accessory';
+}
+function slotToRoyalScrollId(slot) {
+  if (slot === 'weapon') return 'scroll_weapon_royal';
+  if (slot === 'armor') return 'scroll_armor_royal';
+  if (slot === 'offhand') return 'scroll_offhand_royal';
+  return 'scroll_accessory_royal';
 }
 
 // 從裝備欄或背包裡依 id 找出裝備物件——強化彈出視窗需要每次重繪時抓最新資料(強化後素質會變),
@@ -770,6 +804,8 @@ function renderEnhanceModal() {
   const consumables = S.state.consumables || [];
   const scrollId = slotToScrollId(item.slot);
   const scroll = consumables.find((c) => c.id === scrollId);
+  const royalScrollId = slotToRoyalScrollId(item.slot);
+  const royalScroll = consumables.find((c) => c.id === royalScrollId);
   const cube = consumables.find((c) => c.id === 'cube_potential');
   const cubeChoice = consumables.find((c) => c.id === 'cube_potential_choice');
   const uses = item.enhanceUses || 0;
@@ -777,6 +813,24 @@ function renderEnhanceModal() {
   const close = () => { S.enhanceModalItemId = null; render(); };
   // 抉擇方塊預覽:只在「目前這件裝備」有暫存預覽時才顯示選擇區塊
   const preview = S.cubeChoicePreview && S.cubeChoicePreview.itemId === item.id ? S.cubeChoicePreview.preview : null;
+  // 一般卷軸/王家卷軸的強化按鈕共用同一個生成邏輯,只差消耗的道具與數值範圍說明文字——
+  // 王家卷軸只有真王會掉、玩家沒有持有時完全不顯示這顆按鈕,避免介面混亂又用不到。
+  const enhanceButton = (targetScrollId, targetScroll, isRoyal) => h('button', {
+    class: isRoyal ? 'btn primary' : 'btn',
+    title: isRoyal
+      ? `消耗1張${targetScroll?.name || ''}。每次從 -1~+5 之間隨機抽一個數值套用到裝備「全部現有屬性」——範圍比一般卷軸更好,期望值更高、最壞情況跌幅也更小(只有真王會掉,商店買不到)。`
+      : `消耗1張${targetScroll?.name || ''}。每次從 -3~+3 之間隨機抽一個數值(機率平均,7種結果各約1/7)套用到裝備「全部現有屬性」——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差,也可能剛好抽到0完全沒變化。`,
+    onclick: async () => {
+      try {
+        const r = await api.enhanceItem(item.id, targetScrollId);
+        const deltaText = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+        const resultDesc = r.delta > 0 ? `這次是加強(${deltaText})` : r.delta < 0 ? `這次是削弱(${deltaText})` : '這次沒有任何效果(抽到0)';
+        S.error = `強化完成,${resultDesc}。`;
+        S.state = r.state;
+        render(); // 視窗保持開啟,直接刷新顯示最新素質,不用重新點鐵砧圖示
+      } catch (e) { S.error = e.message; render(); }
+    },
+  }, `${isRoyal ? '王家強化' : '強化'}(還可用${usesLeft}/${ENHANCE_MAX_USES}次,需${targetScroll?.name || '卷軸'}x1,持有${targetScroll?.count || 0})`);
   let overlay;
   overlay = h('div', {
     class: 'modal-overlay',
@@ -788,20 +842,10 @@ function renderEnhanceModal() {
       potentialLine(item),
       h('div', { style: 'margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;' }, [
         usesLeft > 0
-          ? h('button', {
-              class: 'btn primary',
-              title: `消耗1張${scroll?.name || ''}。每次從 -3~+3 之間隨機抽一個數值(機率平均,7種結果各約1/7)套用到裝備「全部現有屬性」——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差,也可能剛好抽到0完全沒變化。`,
-              onclick: async () => {
-                try {
-                  const r = await api.enhanceItem(item.id, scrollId);
-                  const deltaText = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
-                  const resultDesc = r.delta > 0 ? `這次是加強(${deltaText})` : r.delta < 0 ? `這次是削弱(${deltaText})` : '這次沒有任何效果(抽到0)';
-                  S.error = `強化完成,${resultDesc}。`;
-                  S.state = r.state;
-                  render(); // 視窗保持開啟,直接刷新顯示最新素質,不用重新點鐵砧圖示
-                } catch (e) { S.error = e.message; render(); }
-              },
-            }, `強化(還可用${usesLeft}/${ENHANCE_MAX_USES}次,需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
+          ? h('div', { style: 'display:flex;flex-wrap:wrap;gap:8px;' }, [
+              enhanceButton(scrollId, scroll, false),
+              royalScroll && royalScroll.count > 0 ? enhanceButton(royalScrollId, royalScroll, true) : null,
+            ])
           : h('span', { class: 'hint' }, `已用完全部 ${ENHANCE_MAX_USES} 次強化機會`),
         h('button', {
           class: 'btn',
@@ -976,8 +1020,18 @@ function renderInventory() {
           h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id, 'accessory2'); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備至飾品二'),
         ]
       : [h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備')];
+    // 裝備比較:跟目前裝備中同部位的裝備逐項比較數值差異,讓玩家不用自己心算就知道換了划不划算。
+    // 飾品有兩格,分別跟飾品一/飾品二比較;其餘部位只有一格,直接比較。空格子(尚未裝備任何東西)
+    // 不顯示比較(視為「還沒有基準可比」,不是「差了全部數值」)。
+    const compareRows = item.slot === 'accessory'
+      ? [
+          s.equipment.accessory1 ? renderStatDiff('比飾品一', diffItemStats(item.stats, s.equipment.accessory1.stats)) : null,
+          s.equipment.accessory2 ? renderStatDiff('比飾品二', diffItemStats(item.stats, s.equipment.accessory2.stats)) : null,
+        ]
+      : [s.equipment[item.slot] ? renderStatDiff('比目前裝備', diffItemStats(item.stats, s.equipment[item.slot].stats)) : null];
     return h('div', { class: `item-card rarity-${item.tier}` }, [
       itemLabel(item),
+      ...compareRows,
       h('div', { style: 'margin-top:4px;' }, [
         ...equipButtons,
         item.tier === 'common' ? h('button', { class: 'btn', onclick: async () => { try { const r = await api.sellGear(item.id); S.error = `賣出獲得 ${r.earned} 金幣`; S.state = r.state; render(); } catch (e) { S.error = e.message; render(); } } }, '賣給商店') : null,
@@ -1079,11 +1133,21 @@ const TIER_COLOR = { common: '#b0b0b0', rare: '#a855f7', epic: '#f59e0b', elite_
 function renderRecipeCard(shopId, r) {
   const canAfford = r.materialsDetail.every((d) => d.have >= d.need);
   const matText = r.materialsDetail.map((d) => `${d.name} ${d.have}/${d.need}`).join('、');
+  // 跟目前裝備中同部位的裝備比較數值差異,讓玩家在「要不要花材料做這件」之前就能直接判斷划不划算,
+  // 不用做出來穿上去才發現其實沒有比較強。飾品有兩格,分別跟兩邊比較。
+  const equipment = S.state?.equipment || {};
+  const compareRows = r.slot === 'accessory'
+    ? [
+        equipment.accessory1 ? renderStatDiff('比飾品一', diffItemStats(r.statBonus, equipment.accessory1.stats)) : null,
+        equipment.accessory2 ? renderStatDiff('比飾品二', diffItemStats(r.statBonus, equipment.accessory2.stats)) : null,
+      ]
+    : [equipment[r.slot] ? renderStatDiff('比目前裝備', diffItemStats(r.statBonus, equipment[r.slot].stats)) : null];
   return h('div', { class: `item-card rarity-${r.tier}` }, [
     h('div', {}, `${r.name}(${r.gold} 金幣, `),
     h('span', { style: canAfford ? '' : 'color:#ef4444;' }, matText),
     h('span', {}, ')'),
     h('div', { class: 'hint' }, `屬性:${statsText(r.statBonus)}`),
+    ...compareRows,
     h('div', { style: 'margin-top:4px;' }, [
       r.setTierDescriptions && r.setTierDescriptions.length > 0
         ? h('button', {

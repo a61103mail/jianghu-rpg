@@ -1,29 +1,30 @@
 // 怪物資料(奇幻練功MMO):明確標示等級/經驗/HP/ATK/DEF,依此判斷玩家能否輕鬆應付。
 // 每隻怪物皆有 dropTable:可販售雜物(交給雜貨店回收換錢)+ 對應商店的製作素材,
 // 怪物擊殺「不會」直接掉錢——金幣完全來自把 dropTable 換來的東西拿去店舖賣掉。
-// 小王/大王額外會有機率掉落強化卷軸/潛能方塊(裝備強化用消耗品),不必完全依賴雜貨店購買。
-// 抉擇方塊(cube_potential_choice)只有菁英(小王/大王)以上才會掉,且不保底——數量固定在
-// 0~2 之間隨機,可能什麼都沒拿到,刻意不讓玩家穩定取得,否則太簡單(見 CUBE_CHOICE_DROP)。
+// 小王/大王(菁英)只會掉「簡單」的強化卷軸(一般 scroll_*)與隨機的潛能方塊(cube_potential);
+// 抉擇方塊(cube_potential_choice,固定洗3條可預覽詞條)與「更強」的王家卷軸(scroll_*_royal,
+// 數值範圍比一般卷軸更好)兩者都只有真王才會掉,兩個等級的王掉落的東西不能混淆——
+// 這樣玩家才有動機想辦法遇到真王,不是隨便打小王大王就能拿到頂級強化道具。
 const CUBE_CHOICE_DROP = { id: 'cube_potential_choice', kind: 'cube_choice', chance: 1, min: 0, max: 2 };
 const MINIBOSS_ENHANCE_DROPS = [
   { id: 'scroll_weapon', kind: 'scroll', chance: 0.15, min: 1, max: 1 },
   { id: 'scroll_armor', kind: 'scroll', chance: 0.15, min: 1, max: 1 },
   { id: 'scroll_accessory', kind: 'scroll', chance: 0.15, min: 1, max: 1 },
-  CUBE_CHOICE_DROP,
+  { id: 'cube_potential', kind: 'cube', chance: 0.1, min: 1, max: 1 },
 ];
 const BOSS_ENHANCE_DROPS = [
   { id: 'scroll_weapon', kind: 'scroll', chance: 0.2, min: 1, max: 1 },
   { id: 'scroll_armor', kind: 'scroll', chance: 0.2, min: 1, max: 1 },
   { id: 'scroll_accessory', kind: 'scroll', chance: 0.2, min: 1, max: 1 },
   { id: 'cube_potential', kind: 'cube', chance: 0.15, min: 1, max: 1 },
-  CUBE_CHOICE_DROP,
 ];
-// 真王(每張地圖獨一無二的終極首領)掉落:比小王/大王更豐厚,機率與數量皆明顯提高。
+// 真王(每張地圖獨一無二的終極首領)掉落:全部換成「王家卷軸」(數值範圍比一般卷軸更好,
+// 見 enhanceEngine.js 的 isRoyal),不再掉簡單卷軸,加上普通方塊+抉擇方塊,比小王/大王豐厚許多。
 const TRUEBOSS_ENHANCE_DROPS = [
-  { id: 'scroll_weapon', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
-  { id: 'scroll_armor', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
-  { id: 'scroll_offhand', kind: 'scroll', chance: 0.3, min: 1, max: 1 },
-  { id: 'scroll_accessory', kind: 'scroll', chance: 0.35, min: 1, max: 2 },
+  { id: 'scroll_weapon_royal', kind: 'scroll_royal', chance: 0.35, min: 1, max: 2 },
+  { id: 'scroll_armor_royal', kind: 'scroll_royal', chance: 0.35, min: 1, max: 2 },
+  { id: 'scroll_offhand_royal', kind: 'scroll_royal', chance: 0.3, min: 1, max: 1 },
+  { id: 'scroll_accessory_royal', kind: 'scroll_royal', chance: 0.35, min: 1, max: 2 },
   { id: 'cube_potential', kind: 'cube', chance: 0.3, min: 1, max: 1 },
   CUBE_CHOICE_DROP,
 ];

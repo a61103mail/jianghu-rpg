@@ -83,7 +83,7 @@ export function duelAttack(duel, userId) {
   if (duel.turnUserId !== userId) return { lines: ['尚未輪到你出手,請等待對方行動。'], rejected: true };
 
   const atkStat = actor.stats.attackType === 'matk' ? actor.stats.matk : actor.stats.atk;
-  const { amount, isCrit, missed, blocked, mpAbsorbed } = rollDamage({ level: actor.stats.level, atk: atkStat, coeff: 1, def: target.stats.def, critRate: actor.stats.critRate, evasionPct: target.stats.evasionRate, blockRatePct: target.stats.blockRatePct, magicDamageReductionPct: target.stats.magicDamageReductionPct });
+  const { amount, isCrit, missed, blocked, mpAbsorbed } = rollDamage({ level: actor.stats.level, atk: atkStat, coeff: 1, def: target.stats.def, critRate: actor.stats.critRate, evasionPct: target.stats.evasionRate, blockRatePct: target.stats.blockRatePct, magicDamageReductionPct: target.stats.magicDamageReductionPct, critDamageMult: actor.stats.critDamageMult });
   duel.turnUserId = target.userId; // 不論本回合有沒有命中,行動後一律輪到對方——「未命中」不該讓你連續多打一次
   if (missed) {
     return { lines: [narrateAttack({ attackerName: actor.username, defenderName: target.username, missed: true })], ended: null, loserUserId: null };

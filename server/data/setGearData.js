@@ -6,12 +6,13 @@ import { MAP_ORDER } from './monsterData.js';
 import { WEAPON_TYPE_BY_CLASS, OFFHAND_TYPE_BY_CLASS } from './itemData.js';
 
 // 各地圖套裝的基礎強度(隨地圖序位 0~4 遞增,呼應菁英/真王本身強度遞增)
+// offhandCritDamage 是盜賊副手專屬的會心傷害%基礎值(其餘職業副手不使用這個欄位)。
 const MAP_GEAR_BASE = [
-  { weaponAtk: 60, armorDef: 42, armorHp: 140, offhandHp: 65, offhandDef: 20, offhandAtk: 18, accHp: 85, accCrit: 8 },
-  { weaponAtk: 90, armorDef: 62, armorHp: 210, offhandHp: 95, offhandDef: 29, offhandAtk: 27, accHp: 125, accCrit: 12 },
-  { weaponAtk: 118, armorDef: 82, armorHp: 280, offhandHp: 130, offhandDef: 39, offhandAtk: 35, accHp: 170, accCrit: 16 },
-  { weaponAtk: 148, armorDef: 103, armorHp: 355, offhandHp: 162, offhandDef: 49, offhandAtk: 44, accHp: 215, accCrit: 20 },
-  { weaponAtk: 180, armorDef: 126, armorHp: 435, offhandHp: 200, offhandDef: 60, offhandAtk: 54, accHp: 265, accCrit: 24 },
+  { weaponAtk: 60, armorDef: 42, armorHp: 140, offhandHp: 65, offhandDef: 20, offhandAtk: 18, offhandCritDamage: 45, accHp: 85, accCrit: 8 },
+  { weaponAtk: 90, armorDef: 62, armorHp: 210, offhandHp: 95, offhandDef: 29, offhandAtk: 27, offhandCritDamage: 60, accHp: 125, accCrit: 12 },
+  { weaponAtk: 118, armorDef: 82, armorHp: 280, offhandHp: 130, offhandDef: 39, offhandAtk: 35, offhandCritDamage: 75, accHp: 170, accCrit: 16 },
+  { weaponAtk: 148, armorDef: 103, armorHp: 355, offhandHp: 162, offhandDef: 49, offhandAtk: 44, offhandCritDamage: 90, accHp: 215, accCrit: 20 },
+  { weaponAtk: 180, armorDef: 126, armorHp: 435, offhandHp: 200, offhandDef: 60, offhandAtk: 54, offhandCritDamage: 105, accHp: 265, accCrit: 24 },
 ];
 
 // 真王套裝比菁英套裝再強一截(呼應真王「至少兩張地圖強度」的定位)
@@ -20,14 +21,14 @@ const TRUEBOSS_MULT = 1.4;
 const ELITE_SET_NAMES = ['史萊姆平原武士套', '哥布林獵殺者套', '礦坑征服者套', '沼澤獵人套', '遺跡征服者套'];
 const TRUEBOSS_SET_NAMES = ['上古樹靈套', '哥布林帝國套', '深淵岩龍套', '太古邪神套', '太初神皇套'];
 
-const CLASS_WEAPON_NAME = { warrior: '戰刃', mage: '法杖', priest: '聖典', archer: '獵弓' };
-const CLASS_OFFHAND_NAME = { warrior: '戰盾', mage: '秘印', priest: '聖徽', archer: '箭匣' };
+const CLASS_WEAPON_NAME = { warrior: '戰刃', mage: '法杖', rogue: '影爪', archer: '獵弓' };
+const CLASS_OFFHAND_NAME = { warrior: '戰盾', mage: '秘印', rogue: '暗器囊', archer: '箭匣' };
 
-// 套裝效果的「職業特色屬性」對應:戰士/牧師=格擋率,法師=真力上限%(法師的真氣減傷固定50%只看副手,
+// 套裝效果的「職業特色屬性」對應:戰士=格擋率,法師=真力上限%(法師的真氣減傷固定50%只看副手,
 // 不受任何裝備/套裝加成疊加,見 characterEngine.js,故套裝改給真力上限讓法師能撐更多次減傷),
-// 弓箭手=迴避率
-export const CLASS_SPECIAL_STAT_KEY = { warrior: 'blockRatePct', priest: 'blockRatePct', mage: 'maxMpPct', archer: 'evasionRate' };
-export const CLASS_SPECIAL_STAT_LABEL = { warrior: '格擋率', priest: '格擋率', mage: '真力上限', archer: '迴避率' };
+// 弓箭手=迴避率,盜賊=會心傷害%(呼應盜賊皮薄但爆發傷害極高的定位,不給任何防禦手段)
+export const CLASS_SPECIAL_STAT_KEY = { warrior: 'blockRatePct', rogue: 'critDamagePct', mage: 'maxMpPct', archer: 'evasionRate' };
+export const CLASS_SPECIAL_STAT_LABEL = { warrior: '格擋率', rogue: '會心傷害', mage: '真力上限', archer: '迴避率' };
 
 // 套裝效果 tiers:每多穿一件解鎖一條,數值隨地圖序位遞增。
 // 1) atkPowerPct(攻擊力%,依職業套用atk或matk) 2) classSpecialPct(職業特色屬性,單位為百分點)
@@ -80,9 +81,15 @@ function buildClassOffhand(setId, mapIndex, classId) {
   const atkKey = WEAPON_TYPE_BY_CLASS[classId].atkKey;
   // 法師套裝副手一律標示固定50%真氣減傷(僅供裝備欄顯示,實際生效判斷只看 characterEngine.js
   // 的 classId,不會因套裝而疊加提升——套裝的職業特色效果改給法師「真力上限%」,見 classSpecialPct)。
-  const stats = classId === 'mage'
-    ? { hp: Math.round(base.offhandHp * mult), [atkKey]: Math.round(base.offhandAtk * mult), magicDamageReductionPct: 50 }
-    : { hp: Math.round(base.offhandHp * mult), def: Math.round(base.offhandDef * mult), [atkKey]: Math.round(base.offhandAtk * mult) };
+  // 盜賊套裝副手同樣不給防禦手段,改給會心傷害%(critDamagePct),呼應盜賊定位。
+  let stats;
+  if (classId === 'mage') {
+    stats = { hp: Math.round(base.offhandHp * mult), [atkKey]: Math.round(base.offhandAtk * mult), magicDamageReductionPct: 50 };
+  } else if (classId === 'rogue') {
+    stats = { hp: Math.round(base.offhandHp * mult), [atkKey]: Math.round(base.offhandAtk * mult), critDamagePct: Math.round(base.offhandCritDamage * mult) };
+  } else {
+    stats = { hp: Math.round(base.offhandHp * mult), def: Math.round(base.offhandDef * mult), [atkKey]: Math.round(base.offhandAtk * mult) };
+  }
   return {
     id: `${setId}_offhand_${classId}`,
     slot: 'offhand',
@@ -101,7 +108,7 @@ function buildAccessory(setId, mapIndex) {
     setId,
     classType: null,
     stats: { hp: Math.round(base.accHp * mult), critRatePct: Math.round(base.accCrit * mult * 10) / 10 },
-    name: `${TRUEBOSS_SET_NAMES[mapIndex]}・聖徽`,
+    name: `${TRUEBOSS_SET_NAMES[mapIndex]}・徽記`,
   };
 }
 
@@ -161,7 +168,7 @@ export function describeSetTiers(tiers, classId) {
 // 材料保底掉落(見 monsterData.js 的 eliteShardDrop/trueBossCrystalDrop),玩家帶去對應商店製作。
 // 武器/副手依職業限定,只出現在該職業對應的商店;防具/飾品職業通用——防具在四間職業商店都能做
 // (呼應「鐵匠鋪打鎧甲」這類世界觀,任何商店都能打出同規格防具),飾品固定在雜貨店統一製作。
-const SHOP_CLASS = { blacksmith: 'warrior', leather: 'archer', magic: 'mage', church: 'priest' };
+const SHOP_CLASS = { blacksmith: 'warrior', leather: 'archer', magic: 'mage', church: 'rogue' };
 const ELITE_WEAPON_MATS = 4, ELITE_ARMOR_MATS = 3;
 const TRUEBOSS_WEAPON_MATS = 5, TRUEBOSS_ARMOR_MATS = 4, TRUEBOSS_OFFHAND_MATS = 3, TRUEBOSS_ACCESSORY_MATS = 3;
 

@@ -3,10 +3,14 @@
 // +3/-3兩個極端值)隨機抽一個變動量,同時套用到裝備「全部現有屬性」(百分比類屬性以百分點為單位,
 // 即抽到 +3 代表該次+3個百分點=+0.03)。運氣好可以5次都抽到+3、一路衝到+15,運氣差也可能一路
 // 摸到-15,中間值(-2,-1,0,1,2)出現機率均等——真正的賭注,不是穩定往上疊的「保證進步」系統。
+// 王家卷軸(scroll_*_royal,只有真王掉落):範圍改為 -1~+5,期望值更高、下跌風險小很多,
+// 呼應「菁英只掉簡單卷軸,真王才掉更強的卷軸」。
 // 方塊(潛能):洗出 1~3 條隨機百分比詞條,分稀有/史詩/傳說三階,使用時有機率讓潛能整體升階。
 
 export const ENHANCE_MAX_USES = 5;
-const ENHANCE_DELTA_MAX = 3; // 每次強化變動量的絕對值上限:實際變動量是 [-3, +3] 均勻分布隨機整數(含0),不是固定值
+const ENHANCE_DELTA_MAX = 3; // 一般卷軸:每次強化變動量的絕對值上限,實際變動量是 [-3, +3] 均勻分布隨機整數(含0)
+const ROYAL_DELTA_MIN = -1; // 王家卷軸(只有真王掉落):變動量下限,最壞情況只小幅倒退
+const ROYAL_DELTA_MAX = 5; // 王家卷軸:變動量上限,比一般卷軸的+3更高
 
 // 舊版相容:先前 UI/呼叫端可能還引用 ENHANCE_MAX_LEVEL 這個名稱,維持匯出但語意改為「最大使用次數」
 export const ENHANCE_MAX_LEVEL = ENHANCE_MAX_USES;
@@ -19,18 +23,22 @@ function slotCategory(slot) {
   return 'accessory';
 }
 
-// 對裝備套用一次強化卷軸:從 -3~+3(共7個整數)均勻隨機抽一個變動量(每個值機率相同,約1/7),
+// 對裝備套用一次強化卷軸:一般卷軸從 -3~+3(共7個整數)均勻隨機抽一個變動量(每個值機率相同,約1/7);
+// 王家卷軸(isRoyal=true)則是 -1~+5(同樣7個整數,但範圍整體偏正,期望值更高、下跌風險更小)。
 // 套用到裝備「全部現有屬性」。整數類屬性(atk/def/hp等)與百分比類屬性(帶Pct後綴,以「百分點」
 // 為單位存放,例如 critRatePct=2.8 代表 2.8%)一律直接套用同一個 delta,不需要額外除以100轉換——
 // item.stats 裡的 pct 欄位本來就是以百分點為單位儲存(呼應 characterEngine.js 彙總時才 /100 轉小數)。
 // 回傳 { success, delta, item, deltas, usesLeft }。success 代表這次「整體是不是變強了」
 // (delta > 0 才算成功;delta = 0 代表這次沒有任何效果,delta < 0 代表變弱了)。
-export function rollEnhance(item) {
+export function rollEnhance(item, isRoyal = false) {
   const uses = item.enhanceUses || 0;
   if (uses >= ENHANCE_MAX_USES) return { success: false, item, maxed: true, usesLeft: 0 };
 
-  // -3 ~ +3 共 7 個整數,Math.floor(Math.random()*7) 落在 0~6,減 3 平移成 -3~+3,每個值機率均等(各1/7)
-  const delta = Math.floor(Math.random() * (ENHANCE_DELTA_MAX * 2 + 1)) - ENHANCE_DELTA_MAX;
+  // 一般卷軸:-3~+3 共 7 個整數,Math.floor(Math.random()*7) 落在 0~6,減 3 平移成 -3~+3。
+  // 王家卷軸:-1~+5 共 7 個整數,同樣的骰法平移成 -1~+5,每個值機率均等(各1/7)。
+  const delta = isRoyal
+    ? Math.floor(Math.random() * (ROYAL_DELTA_MAX - ROYAL_DELTA_MIN + 1)) + ROYAL_DELTA_MIN
+    : Math.floor(Math.random() * (ENHANCE_DELTA_MAX * 2 + 1)) - ENHANCE_DELTA_MAX;
   item.stats = item.stats || {};
   const deltas = {};
   Object.keys(item.stats).forEach((key) => {

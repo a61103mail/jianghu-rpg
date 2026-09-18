@@ -51,14 +51,16 @@ function pick(arr) {
 // 技能傷害則傳入該技能固定的 coeff)。level 為攻擊方等級,def 為受擊方防禦。
 // resistPct:受擊方對此傷害類型(物理/魔法)的抗性,正值減傷、負值(弱點)增傷,套用在防禦力扣減之前。
 //
-// 判定順序:格擋 > 迴避 > 才判定是否被擊中。先擲格擋(戰士/牧師的職業特色機制)——
+// 判定順序:格擋 > 迴避 > 才判定是否被擊中。先擲格擋(戰士的職業特色機制)——
 // 觸發的話這次攻擊直接定性為「命中但減傷」,不再進行迴避判定;只有格擋沒觸發,
 // 才進一步擲迴避,迴避成功則直接 missed:true、完全無傷害;兩者都沒發生,才是「正常被擊中」。
 // magicDamageReductionPct:受擊方的真氣減傷%(法師副手專屬機制)——不是憑空消失的固定減傷,
 // 而是用真力(MP)去扛住這部分傷害:只要受到傷害就會觸發,算出「這次理論上能被MP吸收多少傷害」
 // (mpAbsorbed),實際扣多少MP、MP不夠扛時剩餘傷害要不要轉回HP,交給呼叫端依「當下真實剩餘MP」
 // 判斷(見 game.js/partyEngine.js/duelEngine.js 的呼叫點),這裡只負責算出理論吸收量。
-export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0, evasionPct = 0, blockRatePct = 0, magicDamageReductionPct = 0 }) {
+// critDamageMult:攻擊方的會心傷害倍率(盜賊副手/套裝專屬機制,預設1.6倍,其餘職業永遠停留在
+// 基礎值),見 characterEngine.js 的 computeStats。
+export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistPct = 0, evasionPct = 0, blockRatePct = 0, magicDamageReductionPct = 0, critDamageMult = 1.6 }) {
   let blocked = false;
   if (blockRatePct > 0 && Math.random() < blockRatePct) {
     blocked = true;
@@ -73,7 +75,7 @@ export function rollDamage({ level, atk, coeff = 1, def, critRate = 0.1, resistP
   if (blocked) {
     mitigated = Math.max(1, Math.round(mitigated * 0.5));
   }
-  const preAbsorb = Math.max(1, isCrit ? Math.round(mitigated * 1.6) : mitigated);
+  const preAbsorb = Math.max(1, isCrit ? Math.round(mitigated * critDamageMult) : mitigated);
   const mpAbsorbed = magicDamageReductionPct > 0 ? Math.round(preAbsorb * magicDamageReductionPct) : 0;
   const amount = Math.max(1, preAbsorb - mpAbsorbed);
   return { amount, isCrit, missed: false, blocked, mpAbsorbed };

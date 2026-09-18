@@ -133,7 +133,10 @@ export function computeStats(save) {
 
   let maxHp = cls.baseHp + cls.hpPerLevel * (save.level - 1) + str * 3;
   let maxMp = cls.baseMp + cls.mpPerLevel * (save.level - 1) + int_ * 2;
-  let atk = save.classId === 'archer' ? Math.round(dex * 1.4 + str * 0.2) : Math.round(str * 1.4 + dex * 0.3);
+  // 攻擊力:弓箭手看敏捷、盜賊看幸運(一魚兩吃,幸運同時也是會心率的來源),其餘職業看力量。
+  let atk = save.classId === 'archer' ? Math.round(dex * 1.4 + str * 0.2)
+    : save.classId === 'rogue' ? Math.round(luk * 1.4 + dex * 0.3)
+    : Math.round(str * 1.4 + dex * 0.3);
   let matk = Math.round(int_ * 1.5);
   let def = Math.round(str * 0.3 + dex * 0.3 + save.level * 0.5);
   let critRate = 0.05 + luk * 0.002 + dex * 0.001;
@@ -141,8 +144,7 @@ export function computeStats(save) {
   // 全點DEX時迴避明顯優於其他職業,戰士天生DEX低、迴避明顯較弱但氣血/防禦更高——
   // 這條公式讓「弓箭手擅長閃避、戰士擅長硬扛」的職業定位自然浮現,不需要另外寫特例判斷職業。
   let evasionRate = computeEvasionRate({ dex, level: save.level });
-  // 格擋率:戰士/牧師的職業特色機制,職業基礎值(牧師較高、戰士是牧師的一半,見 classData.js)
-  // 疊加裝備(尤其是副手)提供的加成。法師/弓箭手基礎值為0。
+  // 格擋率:戰士的職業特色機制,職業基礎值 + 疊加裝備(尤其是副手)提供的加成。其餘職業基礎值為0。
   let blockRatePct = cls.blockRatePct || 0;
   // 真氣減傷:法師專屬機制,固定50%、不浮動、不可被任何裝備品質/強化/潛能/套裝疊加提升——
   // 只要「玩家職業是法師」且「已裝備副手」就直接生效,嚴格只看 save.classId,不看裝備本身
@@ -150,6 +152,11 @@ export function computeStats(save) {
   // 之後不論任何裝備資料是否有異常殘留,非法師職業永遠不可能算出非0的真氣減傷。
   const MAGE_OFFHAND_REDUCTION_PCT = 0.5;
   const magicDamageReductionPct = (save.classId === 'mage' && isItemUsable(save.equipment.offhand)) ? MAGE_OFFHAND_REDUCTION_PCT : 0;
+  // 會心傷害倍率:預設1.6倍(即 combatEngine.js 原本寫死的會心傷害)。盜賊專屬機制——副手/套裝
+  // 提供的 critDamagePct 疊加在這個基礎倍率上,呼應盜賊皮薄但爆發傷害極高的定位。其餘職業
+  // 沒有任何來源可以提升這個值,永遠停留在基礎的1.6倍。
+  const BASE_CRIT_DAMAGE_MULT = 1.6;
+  let critDamageMult = BASE_CRIT_DAMAGE_MULT;
 
   // 光環(被動)技能:常駐加成,需等級達到 unlockLevel 才會生效(不是一開始就有)
   const aura = cls.skills.aura;
@@ -158,9 +165,9 @@ export function computeStats(save) {
     if (aura.effect.critRatePct) critRate += aura.effect.critRatePct;
   }
 
-  // 職業特色防禦機制的裝備加成(格擋率/迴避率):嚴格只認 save.classId 決定是否生效,
-  // 不是看裝備本身帶了什麼屬性——避免任何裝備資料異常導致非對應職業被誤套用到不屬於
-  // 自己的防禦機制(同一份 GEAR_SLOTS 迴圈曾經對所有職業一視同仁疊加,是先前 bug 的根源)。
+  // 職業特色防禦/輸出機制的裝備加成(格擋率/迴避率/會心傷害):嚴格只認 save.classId 決定是否
+  // 生效,不是看裝備本身帶了什麼屬性——避免任何裝備資料異常導致非對應職業被誤套用到不屬於
+  // 自己的機制(同一份 GEAR_SLOTS 迴圈曾經對所有職業一視同仁疊加,是先前 bug 的根源)。
   let evasionRatePctFromGear = 0;
   GEAR_SLOTS.forEach((slot) => {
     const item = save.equipment[slot];
@@ -172,10 +179,12 @@ export function computeStats(save) {
     maxHp += bonus.hp || 0;
     maxMp += bonus.mp || 0;
     if (bonus.critRatePct) critRate += bonus.critRatePct / 100;
-    if ((save.classId === 'warrior' || save.classId === 'priest') && bonus.blockRatePct) {
+    if (save.classId === 'warrior' && bonus.blockRatePct) {
       blockRatePct += bonus.blockRatePct / 100;
     } else if (save.classId === 'archer' && bonus.evasionRatePct) {
       evasionRatePctFromGear += bonus.evasionRatePct / 100;
+    } else if (save.classId === 'rogue' && bonus.critDamagePct) {
+      critDamageMult += bonus.critDamagePct / 100;
     }
   });
   evasionRate = Math.min(0.8, evasionRate + evasionRatePctFromGear);
@@ -205,18 +214,19 @@ export function computeStats(save) {
   critRate += potentialCritRatePct;
 
   // 套裝效果「職業特色屬性%」(classSpecialPct,菁英第2件/真王第2件解鎖):依職業對應到
-  // 格擋率(戰士/牧師)、真力上限%(法師——真氣減傷固定50%不可疊加,套裝改給真力上限讓法師
-  // 能撐更多次減傷)或迴避率(弓箭手)。
+  // 格擋率(戰士)、真力上限%(法師——真氣減傷固定50%不可疊加,套裝改給真力上限讓法師能撐更多
+  // 次減傷)、迴避率(弓箭手)或會心傷害%(盜賊)。
   if (setBonuses.classSpecialPct > 0) {
     const specialKey = CLASS_SPECIAL_STAT_KEY[save.classId];
     if (specialKey === 'blockRatePct') blockRatePct += setBonuses.classSpecialPct;
     else if (specialKey === 'maxMpPct') maxMp *= (1 + setBonuses.classSpecialPct);
     else if (specialKey === 'evasionRate') evasionRate = Math.min(0.8, evasionRate + setBonuses.classSpecialPct);
+    else if (specialKey === 'critDamagePct') critDamageMult += setBonuses.classSpecialPct;
   }
   blockRatePct = Math.max(0, Math.min(0.95, blockRatePct));
 
   // 套裝效果「全部能力%」(allStatsExceptSpecialPct,真王套裝第4件、集滿全套才解鎖的終極效果):
-  // 除了上面已經處理過的職業特色屬性外,其餘全部現有戰鬥屬性一起乘算提升。
+  // 除了上面已經處理過的職業特色屬性外,其餘全部現有戰鬥屬性一起乘算提升(含會心傷害倍率)。
   if (setBonuses.allStatsExceptSpecialPct > 0) {
     const mult = 1 + setBonuses.allStatsExceptSpecialPct;
     atk = Math.round(atk * mult);
@@ -225,11 +235,12 @@ export function computeStats(save) {
     maxHp = maxHp * mult;
     maxMp = maxMp * mult;
     critRate *= mult;
+    critDamageMult *= mult;
   }
 
   return {
     str: Math.round(str), dex: Math.round(dex), int: Math.round(int_), luk: Math.round(luk),
-    atk, matk, def, critRate, evasionRate, blockRatePct, magicDamageReductionPct,
+    atk, matk, def, critRate, evasionRate, blockRatePct, magicDamageReductionPct, critDamageMult,
     maxHp: Math.round(maxHp), maxMp: Math.round(maxMp),
     hp: Math.round(maxHp), mp: Math.round(maxMp), // 相容別名:partyEngine/duelEngine 沿用舊欄位名稱取用「滿血滿真力」初始值
     level: save.level,

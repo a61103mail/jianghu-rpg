@@ -246,7 +246,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
       const idx = Number.isInteger(extra.targetIndex) && combat.enemies[extra.targetIndex]?.hp > 0 ? extra.targetIndex : combat.enemies.findIndex((e) => e.hp > 0);
       const target = combat.enemies[idx];
       if (!target) return { lines: ['目標無效。'] };
-      const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
+      const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target), critDamageMult: actor.stats.critDamageMult });
       target.hp = Math.max(0, target.hp - amount);
       lines.push(`${actor.username}施展「${skill.name}」!` + narrateAttack({ attackerName: actor.username, defenderName: target.name, amount, isCrit }));
       consumeWeaponDurability(actor.equipment);
@@ -254,7 +254,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
       lines.push(`${actor.username}施展「${skill.name}」,席捲全場!`);
       combat.enemies.forEach((target) => {
         if (target.hp <= 0) return;
-        const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target) });
+        const { amount, isCrit } = rollDamage({ level: actor.stats.level, atk: atkStat * atkMult, coeff: skill.coeff, def: target.def, critRate, resistPct: resistFor(target), critDamageMult: actor.stats.critDamageMult });
         target.hp = Math.max(0, target.hp - amount);
         lines.push(narrateAttack({ attackerName: actor.username, defenderName: target.name, amount, isCrit }));
       });

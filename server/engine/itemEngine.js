@@ -6,7 +6,7 @@ function nextId() {
   return `eq_${Date.now()}_${counter++}`;
 }
 
-const SHOP_TO_CLASS = { blacksmith: 'warrior', leather: 'archer', magic: 'mage', church: 'priest' };
+const SHOP_TO_CLASS = { blacksmith: 'warrior', leather: 'archer', magic: 'mage', church: 'rogue' };
 
 
 // 裝備素質浮動:同一件裝備每次生成的實際數值不會完全一樣,基準值上下浮動一個比例區間
@@ -44,8 +44,8 @@ function commonArmorStat(level) {
 // 副手是唯一跟武器一樣「依職業鎖定」的普通掉落部位(不像防具/飾品任何職業通用)——
 // 法師的副手給真氣減傷(magicDamageReductionPct,固定50%生效減傷,不因裝備品質浮動,
 // 實際生效判斷嚴格只看 characterEngine.js 的 save.classId,這裡的數值僅供裝備欄顯示用);
-// 戰士/牧師給格擋率(blockRatePct);弓箭手給迴避率(evasionRatePct,呼應弓箭手主打閃避的定位)。
-// 三者皆額外附帶生存數值(氣血/防禦)+ 少量攻擊值。
+// 戰士給格擋率(blockRatePct);弓箭手給迴避率(evasionRatePct,呼應弓箭手主打閃避的定位);
+// 盜賊給會心傷害(critDamagePct,不給任何防禦數值,呼應盜賊皮薄但爆發傷害極高的定位)。
 function commonOffhandStat(level, classId, atkKey) {
   const hpRoll = rollStatWithVariance(4 + level * 1.2);
   const atkRoll = rollStatWithVariance(1 + level * 0.35);
@@ -61,6 +61,13 @@ function commonOffhandStat(level, classId, atkKey) {
     return {
       stats: { hp: hpRoll.value, def: defRoll.value, [atkKey]: atkRoll.value, evasionRatePct: evasionRoll.value },
       quality: averageQuality([hpRoll, defRoll, atkRoll, evasionRoll]),
+    };
+  }
+  if (classId === 'rogue') {
+    const critDamageRoll = rollDecimalStatWithVariance(10 + level * 1.2); // 普通掉落上限抓在略低於商店common(15%),避免打怪就直接接近後期強度
+    return {
+      stats: { hp: hpRoll.value, [atkKey]: atkRoll.value, critDamagePct: critDamageRoll.value },
+      quality: averageQuality([hpRoll, atkRoll, critDamageRoll]),
     };
   }
   const defRoll = rollStatWithVariance(1 + level * 0.4);
