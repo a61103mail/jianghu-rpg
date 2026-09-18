@@ -14,15 +14,19 @@ const SLOT_LABEL_ZH = { weapon: '武器', armor: '防具', offhand: '副手', ac
 function slotLabelZh(slot) { return SLOT_LABEL_ZH[slot] || slot; }
 const STAT_LABEL_ZH = {
   atk: '攻擊力', matk: '魔法攻擊力', def: '防禦力', hp: '氣血上限', mp: '真力上限',
-  critRatePct: '會心率', hpRegenPct: '氣血回復', atkPowerPct: '攻擊強度%', defPct: '防禦%', hpPct: '氣血%',
+  critRatePct: '會心率', hpRegenPct: '氣血回復', atkPowerPct: '攻擊強度', defPct: '防禦', hpPct: '氣血',
   str: '力量', dex: '敏捷', int: '智力', luk: '幸運',
-  blockRatePct: '格擋率', magicDamageReductionPct: '真氣減傷%',
+  blockRatePct: '格擋率', magicDamageReductionPct: '真氣減傷',
 };
 function statLabelZh(key) { return STAT_LABEL_ZH[key] || key; }
 function statsText(stats) {
   // 數值可能為負(強化失敗倒扣),正數才加 + 號,負數本身帶 - 號不需要額外處理,
-  // 否則會變成「格擋率+-5」這種雙重符號的畸形顯示。
-  return Object.entries(stats || {}).map(([k, v]) => `${statLabelZh(k)}${v >= 0 ? '+' : ''}${v}`).join('、');
+  // 否則會變成「格擋率+-5」這種雙重符號的畸形顯示。百分比類屬性(欄位名含Pct)額外補上 % 符號,
+  // 不然玩家分不清「格擋率+5」是+5個百分點還是+5點數值。
+  return Object.entries(stats || {}).map(([k, v]) => {
+    const isPct = k.toLowerCase().includes('pct');
+    return `${statLabelZh(k)}${v >= 0 ? '+' : ''}${v}${isPct ? '%' : ''}`;
+  }).join('、');
 }
 function classNameZh(classId) {
   return S.classes.find((c) => c.id === classId)?.name || classId;
@@ -630,24 +634,26 @@ function rollQualityInfo(q) {
   return { label: '劣質', className: 'quality-bad' };
 }
 
-// itemLabel 回傳可混合字串與DOM節點的陣列(而非單純字串),才能插入有顏色的品質標籤;
-// 呼叫端一律用陣列形式當作 h() 的 children,不要用樣板字串插值(那樣會把DOM節點轉成無意義文字)。
+// itemLabel 回傳一個完整的 <div> 容器(內部分 2 行,不拆得太瑣碎——標題行含名稱/品質/強化值/次數,
+// 屬性行列出全部素質數值),呼叫端直接把回傳值當一個子節點插入,不要再展開陣列。
 function itemLabel(item) {
   // enhanceLevel 新制下可能是負數(強化失敗會倒扣),原本只在 >0 時顯示會讓負值被吃掉、
   // 玩家看不出這件裝備其實已經被強化「弱化」過,改成只要不是 0 就顯示(正負皆標示清楚)。
   const enhanceText = item.enhanceLevel ? ` ${item.enhanceLevel > 0 ? '+' : ''}${item.enhanceLevel}` : '';
   const q = rollQualityInfo(item.rollQuality);
+  const uses = item.enhanceUses || 0;
   // 耐久度只有武器/防具/副手才有(飾品 maxDurability 為 null,不顯示這段)
-  const durabilityText = item.maxDurability != null ? ` ・耐久${item.durability}/${item.maxDurability}` : '';
+  const durabilityText = item.maxDurability != null ? `耐久 ${item.durability}/${item.maxDurability}` : null;
   const isBroken = item.maxDurability != null && item.durability <= 0;
-  return [
-    `${item.name}${enhanceText}(${itemTierLabel(item.tier)}${item.classType ? `・${classNameZh(item.classType)}` : ''})`,
-    ' ',
-    h('span', { class: q.className }, `[${q.label}]`),
-    ` Lv${item.itemLevel} — ${statsText(item.stats)}`,
-    durabilityText ? h('span', { class: isBroken ? 'durability-broken' : 'hint' }, durabilityText) : null,
-    isBroken ? h('span', { class: 'durability-broken' }, ' (已損壞,無法裝備)') : null,
-  ];
+  return h('div', {}, [
+    h('div', {}, [
+      `${item.name}${enhanceText} `,
+      h('span', { class: q.className }, `[${q.label}]`),
+      ` (${itemTierLabel(item.tier)}${item.classType ? `・${classNameZh(item.classType)}` : ''}・Lv${item.itemLevel}・強化已用${uses}/${ENHANCE_MAX_USES}次${durabilityText ? `・${durabilityText}` : ''})`,
+    ]),
+    h('div', { class: 'hint' }, statsText(item.stats)),
+    isBroken ? h('div', { class: 'durability-broken' }, '已損壞,無法裝備,只能賣給雜貨店回收') : null,
+  ]);
 }
 
 const POTENTIAL_TIER_LABEL = { rare: '稀有', epic: '史詩', legendary: '傳說' };
@@ -670,7 +676,8 @@ function slotToScrollId(slot) {
   return 'scroll_accessory';
 }
 
-// 強化+洗潛能按鈕:裝備欄跟背包都會用到,itemId 帶入後端會自動找出該裝備目前在哪個位置
+// 強化+洗潛能按鈕:裝備欄跟背包都會用到,itemId 帶入後端會自動找出該裝備目前在哪個位置。
+// 強化次數/淨強化值已經在 itemLabel 的標題行清楚顯示,這裡按鈕文字不重複列出,只保留操作本身跟必要的材料需求。
 function renderEnhanceControls(item) {
   const consumables = S.state.consumables || [];
   const scrollId = slotToScrollId(item.slot);
@@ -678,8 +685,6 @@ function renderEnhanceControls(item) {
   const cube = consumables.find((c) => c.id === 'cube_potential');
   const uses = item.enhanceUses || 0;
   const usesLeft = ENHANCE_MAX_USES - uses;
-  const netLevel = item.enhanceLevel || 0;
-  const levelText = netLevel >= 0 ? `+${netLevel}` : `${netLevel}`;
   return h('div', { style: 'margin-top:4px;' }, [
     potentialLine(item),
     usesLeft > 0
@@ -689,16 +694,15 @@ function renderEnhanceControls(item) {
           onclick: async () => {
             try {
               const r = await api.enhanceItem(item.id, scrollId);
-              const netText = r.item.enhanceLevel >= 0 ? `+${r.item.enhanceLevel}` : `${r.item.enhanceLevel}`;
               const deltaText = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
               const resultDesc = r.delta > 0 ? `這次是加強(${deltaText})` : r.delta < 0 ? `這次是削弱(${deltaText})` : '這次沒有任何效果(抽到0)';
-              S.error = `強化完成,${resultDesc}。目前淨強化 ${netText}(還可使用${r.usesLeft}次)`;
+              S.error = `強化完成,${resultDesc}。`;
               S.state = r.state;
               render();
             } catch (e) { S.error = e.message; render(); }
           },
-        }, `強化(目前${levelText},每次隨機-3~+3,還可用${usesLeft}/${ENHANCE_MAX_USES}次,需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
-      : h('span', { class: 'hint' }, `已用完全部 ${ENHANCE_MAX_USES} 次強化機會(目前淨強化 ${levelText})`),
+        }, `強化(需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
+      : h('span', { class: 'hint' }, `已用完全部 ${ENHANCE_MAX_USES} 次強化機會`),
     h('button', {
       class: 'btn',
       title: `消耗1顆${cube?.name || ''}`,
@@ -716,6 +720,19 @@ function renderEnhanceControls(item) {
 
 const MATERIAL_KIND_LABEL = { junk: '雜物(雜貨店回收)', material: '製作素材', rare_material: '稀有素材(小王/大王掉落)', party_material: '組隊限定素材(僅組隊副本擊敗大王掉落)' };
 
+// 背包裝備分類:依部位分組顯示(武器/防具/副手/飾品),而不是全部裝備混成一個長列表——
+// 東西一多就分不清哪些是武器哪些是飾品,分類後同類裝備放在一起,找東西不用整排掃過去。
+const INV_GROUP_ORDER = ['weapon', 'armor', 'offhand', 'accessory'];
+const INV_GROUP_LABEL = { weapon: '⚔ 武器', armor: '🛡 防具', offhand: '🔰 副手', accessory: '💍 飾品' };
+function groupInventoryBySlot(inventory) {
+  const groups = { weapon: [], armor: [], offhand: [], accessory: [] };
+  inventory.forEach((item) => {
+    const key = groups[item.slot] ? item.slot : 'accessory'; // 未知部位保守歸類到飾品,不會憑空消失不見
+    groups[key].push(item);
+  });
+  return groups;
+}
+
 function renderInventory() {
   const s = S.state;
 
@@ -726,12 +743,46 @@ function renderInventory() {
       // 背包卡片有 rarity-${tier} 決定裝備品階顏色(灰/紫/橘),裝備欄先前漏加這個 class,
       // 導致同一件裝備一放進裝備欄「顏色就不見了」變回預設白字,跟背包內看到的不一致。
       h('div', { class: `item-card${item ? ` rarity-${item.tier}` : ''}` }, [
-        h('div', {}, item ? [`【${slotLabelZh(slot)}】 `, ...itemLabel(item)] : `【${slotLabelZh(slot)}】(空)`),
+        h('div', { class: 'hint' }, `【${slotLabelZh(slot)}】`),
+        item ? itemLabel(item) : h('div', {}, '(空)'),
         item ? h('button', { class: 'btn', onclick: async () => { await api.unequip(slot); await refreshInvState(); } }, '卸下') : null,
         item ? renderEnhanceControls(item) : null,
       ])
     ),
   ]);
+
+  // 單張背包裝備卡片:名稱/素質/操作按鈕/強化區都在同一張卡片內,不额外拆分,但改用清楚的分行呈現(見 itemLabel)
+  function renderInventoryItemCard(item) {
+    // 飾品是通用格(accessory),裝備時要讓玩家自己選放飾品一還是飾品二;
+    // 武器/防具/副手維持單一「裝備」按鈕。
+    const equipButtons = item.slot === 'accessory'
+      ? [
+          h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id, 'accessory1'); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備至飾品一'),
+          h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id, 'accessory2'); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備至飾品二'),
+        ]
+      : [h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備')];
+    return h('div', { class: `item-card rarity-${item.tier}` }, [
+      itemLabel(item),
+      h('div', {}, [
+        ...equipButtons,
+        item.tier === 'common' ? h('button', { class: 'btn', onclick: async () => { try { const r = await api.sellGear(item.id); S.error = `賣出獲得 ${r.earned} 金幣`; S.state = r.state; render(); } catch (e) { S.error = e.message; render(); } } }, '賣給商店') : null,
+        h('input', { type: 'number', id: `price-${item.id}`, placeholder: '開價', style: 'width:80px;display:inline-block;margin:0 4px;' }),
+        h('button', {
+          class: 'btn',
+          onclick: async () => {
+            const price = Number(document.getElementById(`price-${item.id}`).value);
+            try {
+              const r = await api.listItem(item.id, price);
+              S.error = `已上架,手續費 ${r.fee} 金幣`;
+              S.state = r.state;
+              render();
+            } catch (e) { S.error = e.message; render(); }
+          },
+        }, '上架交易所'),
+      ]),
+      renderEnhanceControls(item),
+    ]);
+  }
 
   // 材料/雜物清單:先前只有雜貨店能看到「雜物」,製作素材/稀有素材完全沒地方顯示,身上到底有什麼完全看不到
   const materialGroups = { junk: [], material: [], rare_material: [], party_material: [] };
@@ -747,46 +798,26 @@ function renderInventory() {
     s.materials.length === 0 ? h('div', { class: 'hint' }, '身上沒有任何材料或雜物,去闖蕩狩獵/採集吧。') : null,
   ]);
 
+  // 背包依裝備部位分類分組顯示(武器/防具/副手/飾品各自一組),不再是一個混雜所有種類的長列表——
+  // 東西一多容易分不清哪些是武器哪些是飾品,分組後同類放一起,要找哪件裝備一眼就能定位。
+  const invGroups = groupInventoryBySlot(s.inventory);
   const invPanel = h('div', { class: 'panel' }, [
     h('h3', {}, '背包(裝備)'),
-    h('div', { class: 'card-grid list-scroll' }, s.inventory.map((item) => {
-      // 飾品是通用格(accessory),裝備時要讓玩家自己選放飾品一還是飾品二;
-      // 武器/防具(或舊資料殘留的 accessory1/accessory2)維持單一「裝備」按鈕。
-      const equipButtons = item.slot === 'accessory'
-        ? [
-            h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id, 'accessory1'); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備至飾品一'),
-            h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id, 'accessory2'); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備至飾品二'),
-          ]
-        : [h('button', { class: 'btn', onclick: async () => { try { await api.equip(item.id); await refreshInvState(); } catch (e) { S.error = e.message; render(); } } }, '裝備')];
-      return h('div', { class: `item-card rarity-${item.tier}` }, [
-        h('div', {}, itemLabel(item)),
-        h('div', {}, [
-          ...equipButtons,
-          item.tier === 'common' ? h('button', { class: 'btn', onclick: async () => { try { const r = await api.sellGear(item.id); S.error = `賣出獲得 ${r.earned} 金幣`; S.state = r.state; render(); } catch (e) { S.error = e.message; render(); } } }, '賣給商店') : null,
-          h('input', { type: 'number', id: `price-${item.id}`, placeholder: '開價', style: 'width:80px;display:inline-block;margin:0 4px;' }),
-          h('button', {
-            class: 'btn',
-            onclick: async () => {
-              const price = Number(document.getElementById(`price-${item.id}`).value);
-              try {
-                const r = await api.listItem(item.id, price);
-                S.error = `已上架,手續費 ${r.fee} 金幣`;
-                S.state = r.state;
-                render();
-              } catch (e) { S.error = e.message; render(); }
-            },
-          }, '上架交易所'),
-        ]),
-        renderEnhanceControls(item),
-      ]);
-    })),
+    ...INV_GROUP_ORDER.flatMap((key) => {
+      const list = invGroups[key];
+      if (list.length === 0) return [];
+      return [
+        h('div', { class: 'hint', style: 'margin-top:10px;font-size:15px;' }, `${INV_GROUP_LABEL[key]}(${list.length})`),
+        h('div', { class: 'card-grid' }, list.map(renderInventoryItemCard)),
+      ];
+    }),
     s.inventory.length === 0 ? h('div', { class: 'hint' }, '背包空空如也,去闖蕩累積裝備吧。') : null,
   ]);
 
   // 左欄:裝備欄+材料(較短、資訊型);右欄:背包裝備清單(項目多,並排能少滾很多)
   const content = h('div', { class: 'grid-2' }, [
     h('div', {}, [equipPanel, materialsPanel]),
-    h('div', {}, [invPanel]),
+    h('div', { class: 'list-scroll' }, [invPanel]),
   ]);
   mount([topBar(), errorBanner()], [content]);
 }

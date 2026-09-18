@@ -20,7 +20,9 @@ function slotCategory(slot) {
 }
 
 // 對裝備套用一次強化卷軸:從 -3~+3(共7個整數)均勻隨機抽一個變動量(每個值機率相同,約1/7),
-// 套用到裝備「全部現有屬性」(整數類屬性直接加該值,百分比類屬性當作百分點/100換算)。
+// 套用到裝備「全部現有屬性」。整數類屬性(atk/def/hp等)與百分比類屬性(帶Pct後綴,以「百分點」
+// 為單位存放,例如 critRatePct=2.8 代表 2.8%)一律直接套用同一個 delta,不需要額外除以100轉換——
+// item.stats 裡的 pct 欄位本來就是以百分點為單位儲存(呼應 characterEngine.js 彙總時才 /100 轉小數)。
 // 回傳 { success, delta, item, deltas, usesLeft }。success 代表這次「整體是不是變強了」
 // (delta > 0 才算成功;delta = 0 代表這次沒有任何效果,delta < 0 代表變弱了)。
 export function rollEnhance(item) {
@@ -33,11 +35,10 @@ export function rollEnhance(item) {
   const deltas = {};
   Object.keys(item.stats).forEach((key) => {
     const isPct = key.toLowerCase().includes('pct');
-    const appliedDelta = isPct ? delta / 100 : delta;
     // 下限保護:避免多次負向強化把數值弄到深度負值造成後續戰鬥公式異常(如負攻擊力算出負傷害),
     // 百分比類最低壓在 0,整數類最低壓在 1——「很爛」但不會整個壞掉,呼應「這是賭注不是懲罰到報廢」。
     const floor = isPct ? 0 : 1;
-    const newValue = Math.max(floor, item.stats[key] + appliedDelta);
+    const newValue = Math.max(floor, item.stats[key] + delta);
     deltas[key] = Math.round((newValue - item.stats[key]) * 1000) / 1000;
     item.stats[key] = Math.round(newValue * 1000) / 1000;
   });

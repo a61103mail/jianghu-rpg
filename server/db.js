@@ -61,6 +61,15 @@ async function initSchema() {
       updated_at TEXT NOT NULL
     );
 
+    -- 世界真王重生計時:全服共享的單一列(id 固定為 1),data 是 { [mapId]: readyAtEpochMs } 的 JSON,
+    -- 取代小王/大王原本的個人存檔計時(save.bossCooldowns)——真王的重生是「全服共同」而非每人各自獨立,
+    -- 見 engine/worldBossEngine.js。
+    CREATE TABLE IF NOT EXISTS world_boss_state (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      data TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
     -- 玩家交易所:持久化上架列表,買賣雙方皆為玩家
     CREATE TABLE IF NOT EXISTS auction_listings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
