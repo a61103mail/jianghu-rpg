@@ -18,6 +18,7 @@ async function request(path, options = {}) {
 }
 
 export const api = {
+  getVersion: () => request('/version'),
   register: (username, password) => request('/auth/register', { method: 'POST', body: JSON.stringify({ username, password }) }),
   login: (username, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   setPlayerId: (playerId) => request('/auth/set-player-id', { method: 'POST', body: JSON.stringify({ playerId }) }),

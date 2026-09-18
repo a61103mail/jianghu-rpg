@@ -103,6 +103,8 @@ const S = {
   shopCategoryFilter: 'normal', // 商店裝備製作目前選中的類型分頁籤('normal'一般配方 | 'set'套裝配方)
   invSlotFilter: 'weapon', // 背包裝備目前選中的部位分頁籤,同樣避免4部位全部展開要滑很長
   invMaterialFilter: 'junk', // 背包材料/雜物目前選中的種類分頁籤
+  bootId: null, // 這個分頁載入當下的伺服器版本標記,見 startVersionWatch()
+  newVersionAvailable: false, // 偵測到伺服器版本跟載入當下不同(=有新部署),提示玩家重新整理
 };
 
 function h(tag, attrs = {}, children = []) {
@@ -1685,6 +1687,55 @@ async function enterGame() {
   render();
 }
 
+// ---- 版本更新偵測 ----
+// 這是單頁應用(SPA),玩家分頁只要沒重新整理,就會一直執行「打開分頁當下」載入的舊版前端 JS,
+// 但呼叫的 API 永遠是即時的新版後端。一旦某次更新改變了資料格式語意(例如曾經把裝備 tier 從
+// common/rare/epic 改成地圖id),舊版前端的篩選邏輯可能完全對不上新版資料,玩家會看到「分類
+// 數字明明有東西,底下清單卻是空的」這種自己完全無法判斷是不是程式壞掉的詭異現象。
+// 開分頁當下記錄伺服器版本(見 server/index.js 的 SERVER_BOOT_ID),之後定期輪詢比對,一旦偵測到
+// 後端已經重新部署,就顯示固定在畫面最上方的提示條,引導玩家重新整理拿到對應的新版前端。
+function renderVersionBanner() {
+  const existing = document.getElementById('version-banner');
+  if (!S.newVersionAvailable) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) return; // 已經顯示過,不用重複插入
+  const banner = h('div', {
+    id: 'version-banner',
+    style: 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#1a1a1a;'
+      + 'padding:8px 12px;text-align:center;font-size:14px;font-weight:bold;display:flex;'
+      + 'align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;',
+  }, [
+    h('span', {}, '遊戲已推出新版本,請重新整理頁面(部分功能可能因版本不同而顯示異常)'),
+    h('button', {
+      style: 'padding:4px 12px;background:#1a1a1a;color:#f59e0b;border:1px solid #1a1a1a;border-radius:4px;font-weight:bold;cursor:pointer;',
+      onclick: () => window.location.reload(),
+    }, '立即重新整理'),
+  ]);
+  document.body.appendChild(banner);
+}
+
+function startVersionWatch() {
+  const check = async () => {
+    try {
+      const { bootId } = await api.getVersion();
+      if (S.bootId === null) {
+        S.bootId = bootId; // 第一次檢查:記錄這個分頁載入當下的伺服器版本,之後才有東西可比對
+        return;
+      }
+      if (bootId !== S.bootId && !S.newVersionAvailable) {
+        S.newVersionAvailable = true;
+        renderVersionBanner();
+      }
+    } catch {
+      // 檢查失敗(離線/伺服器重啟中)不影響遊戲本身,靜默忽略,下次輪詢再試
+    }
+  };
+  check();
+  setInterval(check, 45000);
+}
+
 function render() {
   if (S.view === 'auth') return renderAuth();
   if (S.view === 'setPlayerId') return renderSetPlayerId();
@@ -1702,6 +1753,7 @@ function render() {
 }
 
 (async function init() {
+  startVersionWatch();
   if (getToken()) {
     try {
       // 頁面重新整理/重新開啟分頁時,token 還在 localStorage,但記憶體中的 S.username/S.playerId

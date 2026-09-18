@@ -58,6 +58,17 @@ app.use(express.json());
 app.use('/api/auth', authRoutes());
 app.use('/api/game', gameRoutes());
 
+// 版本標記:伺服器每次啟動(=每次重新部署)都會產生一組新的隨機 ID,供前端輪詢比對。
+// 用途:這是單頁應用(SPA),玩家分頁只要沒有重新整理,就會一直執行「打開分頁當下」載入的舊版
+// JS——但呼叫的 API 是即時的新版後端。當某次更新改變了資料格式的語意(例如這次把裝備 tier 從
+// common/rare/epic 改成地圖id),舊版前端的過濾邏輯可能完全對不上新版資料,導致玩家看到「明明
+// 分類數字有東西,底下清單卻是空的」這種難以自行判斷的詭異現象,還以為是程式壞掉。
+// 前端會定期打這支 API,偵測到版本變了就提示玩家重新整理,而不用每次改版都得請玩家手動清快取。
+const SERVER_BOOT_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+app.get('/api/version', (req, res) => {
+  res.json({ bootId: SERVER_BOOT_ID });
+});
+
 // 存檔急救備份:受 token 保護,匯出全部資料表供人工存成 data-snapshot.json、commit 進版本控制。
 // 沒有設定 ADMIN_BACKUP_TOKEN 時整個端點視同不存在(回 404),避免公開原始碼裡出現任何可用密碼。
 app.get('/api/admin/export', async (req, res) => {
