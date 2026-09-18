@@ -41,7 +41,7 @@ export const CLASSES = {
     mpPerLevel: 6,
     blockRatePct: 0, // 法師不走格擋路線,防禦手段是裝備副手固定觸發的50%真氣減傷(見 characterEngine.js)
     skills: {
-      basic: { id: 'm_bolt', name: '火焰彈', type: 'single', unlockLevel: 1, mpCost: 4, coeff: 1.4, desc: '射出一枚火焰彈,對單一敵人造成傷害。' },
+      basic: { id: 'm_bolt', name: '火焰彈', type: 'single', unlockLevel: 1, mpCost: 0, coeff: 1.4, desc: '射出一枚火焰彈,對單一敵人造成傷害。' },
       aoe: { id: 'm_burst', name: '烈焰爆', type: 'aoe', unlockLevel: 8, mpCost: 10, coeff: 0.9, desc: '引爆烈焰,對所有敵人造成傷害。' },
       buff: { id: 'm_focus', name: '魔力灌注', type: 'buff', unlockLevel: 15, mpCost: 14, durationTurns: 3, effect: { atkPct: 0.25 }, desc: '凝聚魔力,3回合內魔攻提升 25%。' },
       aura: { id: 'm_flow', name: '魔力回流', type: 'aura', unlockLevel: 22, effect: { mpRegenPerTurn: 2 }, desc: '（被動)每回合額外回復 2 點真力。' },
@@ -62,7 +62,7 @@ export const CLASSES = {
     mpPerLevel: 5,
     blockRatePct: 0.16, // 格擋基礎值:牧師是四職業中最高的(聖光護體),戰士是牧師的一半
     skills: {
-      basic: { id: 'p_smite', name: '聖光箭', type: 'single', unlockLevel: 1, mpCost: 4, coeff: 1.15, desc: '聖光凝聚成箭,對單一敵人造成傷害。' },
+      basic: { id: 'p_smite', name: '聖光箭', type: 'single', unlockLevel: 1, mpCost: 0, coeff: 1.15, desc: '聖光凝聚成箭,對單一敵人造成傷害。' },
       aoe: { id: 'p_wave', name: '神聖震擊', type: 'aoe', unlockLevel: 8, mpCost: 10, coeff: 0.7, desc: '聖光震盪四方,對所有敵人造成傷害。' },
       buff: { id: 'p_pray', name: '治癒祝禱', type: 'buff', unlockLevel: 15, mpCost: 12, healPct: 0.3, desc: '祈禱聖光,立即恢復 30% 氣血上限。' },
       aura: { id: 'p_bless', name: '生命祝福', type: 'aura', unlockLevel: 22, effect: { hpRegenPct: 0.03 }, desc: '（被動)每回合額外回復 3% 氣血上限。' },
@@ -83,7 +83,7 @@ export const CLASSES = {
     mpPerLevel: 4,
     blockRatePct: 0, // 弓箭手的防禦主軸維持迴避率(DEX天生高),不給格擋基礎值
     skills: {
-      basic: { id: 'a_shot', name: '疾風箭', type: 'single', unlockLevel: 1, mpCost: 3, coeff: 1.35, desc: '快速射出一箭,對單一敵人造成傷害。' },
+      basic: { id: 'a_shot', name: '疾風箭', type: 'single', unlockLevel: 1, mpCost: 0, coeff: 1.35, desc: '快速射出一箭,對單一敵人造成傷害。' },
       aoe: { id: 'a_rain', name: '亂箭齊發', type: 'aoe', unlockLevel: 8, mpCost: 9, coeff: 0.85, desc: '箭如雨下,對所有敵人造成傷害。' },
       buff: { id: 'a_eagle', name: '鷹眼', type: 'buff', unlockLevel: 15, mpCost: 10, durationTurns: 3, effect: { critRatePct: 0.15 }, desc: '凝神專注,3回合內會心率提升 15%。' },
       aura: { id: 'a_agile', name: '敏捷光環', type: 'aura', unlockLevel: 22, effect: { critRatePct: 0.05 }, desc: '（被動)會心率天生提升 5%。' },
