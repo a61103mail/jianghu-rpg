@@ -98,7 +98,7 @@ const OFFHAND_TIER_STATS = {
   rare: { hp: 37, def: 11, atk: 10, blockPct: 5, magicReductionPct: 65 },
   epic: { hp: 55, def: 17, atk: 16, blockPct: 7, magicReductionPct: 80 },
 };
-const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有' };
+const TIER_NAME_ZH = { common: '普通', rare: '稀有', epic: '超稀有', elite_set: '菁英套裝', trueboss_set: '真王套裝' };
 
 // 依商店的攻擊屬性(atk/matk)與部位,組出五個部位×三階層共 15 張配方(武器/防具/副手各1張+飾品2張)。
 // 飾品的兩張配方(acc1會心向/acc2氣血向)只是「不同屬性傾向的飾品」,不代表兩個不同格子——

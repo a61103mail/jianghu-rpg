@@ -9,7 +9,8 @@ import { getItem, getShop, SHOP_ORDER, getRareRecipes, getPotion, POTION_ORDER, 
 import { rollMapEvent } from '../data/eventData.js';
 import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen } from '../engine/characterEngine.js';
 import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from '../engine/combatEngine.js';
-import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand } from '../engine/itemEngine.js';
+import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand, instantiateSetGear } from '../engine/itemEngine.js';
+import { getSetTemplatesFor, getSetInfo } from '../data/setGearData.js';
 import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
@@ -749,6 +750,23 @@ export default function gameRoutes() {
             const gear = generateCommonGear(enemy.level);
             save.inventory.push(gear);
             drops.push(`裝備:${gear.name}`);
+          }
+        }
+        // 菁英(miniboss/boss)/真王額外有機率掉落「套裝」專屬部位(武器依玩家職業生成對應版本,
+        // 防具/副手/飾品職業通用),呼應「菁英/大BOSS也要有裝備,且要有套裝效果」的要求。
+        if (enemy.tier === 'miniboss' || enemy.tier === 'boss' || enemy.tier === 'trueboss') {
+          const setId = enemy.tier === 'trueboss' ? `trueboss_${combat.mapId}` : `elite_${combat.mapId}`;
+          const setChance = enemy.tier === 'trueboss' ? 0.5 : 0.2;
+          if (Math.random() < setChance) {
+            const slots = getSetTemplatesFor(setId).map((t) => t.slot);
+            const uniqueSlots = [...new Set(slots)];
+            const pickedSlot = uniqueSlots[Math.floor(Math.random() * uniqueSlots.length)];
+            const setGear = instantiateSetGear(setId, pickedSlot, save.classId);
+            if (setGear) {
+              save.inventory.push(setGear);
+              const setInfo = getSetInfo(setId);
+              drops.push(`套裝:${setGear.name}(屬於「${setInfo?.name || setId}」,集滿${setInfo?.pieces || '?'}件解鎖全部套裝效果)`);
+            }
           }
         }
       });

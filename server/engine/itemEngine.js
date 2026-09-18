@@ -1,5 +1,6 @@
-// 裝備生成引擎:普通裝備(monster drop)vs稀有裝備(shop craft only),兩軌互不重疊。
+// 裝備生成引擎:普通裝備(monster drop)vs稀有裝備(shop craft only)vs套裝裝備(elite/trueboss drop),三軌互不重疊。
 import { GEAR_SLOTS, WEAPON_TYPE_BY_CLASS, OFFHAND_TYPE_BY_CLASS, ARMOR_NAMES, ACCESSORY_NAMES } from '../data/itemData.js';
+import { getSetTemplatesFor } from '../data/setGearData.js';
 
 let counter = 1;
 function nextId() {
@@ -7,6 +8,7 @@ function nextId() {
 }
 
 const SHOP_TO_CLASS = { blacksmith: 'warrior', leather: 'archer', magic: 'mage', church: 'priest' };
+
 
 // 裝備素質浮動:同一件裝備每次生成的實際數值不會完全一樣,基準值上下浮動一個比例區間
 // (用比例而非固定±5,因為裝備數值橫跨低階~高階很大範圍,比例浮動在哪一階都感覺得到差異)。
@@ -169,6 +171,31 @@ export function createStarterMageOffhand() {
     enhanceUses: 0,
     potential: null,
     ...durabilityFieldsFor('offhand'),
+  };
+}
+
+// 套裝裝備(菁英/真王專屬掉落):依 setId + slot + classId 從範本挑一件實例化。
+// 武器/副手依職業限定(classId 決定要哪個版本),防具/飾品職業通用(classId 參數會被忽略)。
+// 數值固定不浮動(不像一般掉落/打造有隨機區間),統一給予高品質顯示,呼應「稀有掉落理應優良」。
+export function instantiateSetGear(setId, slot, classId) {
+  const templates = getSetTemplatesFor(setId, slot);
+  if (templates.length === 0) return null;
+  const template = templates.find((t) => !t.classType || t.classType === classId) || templates[0];
+  const isTrueBoss = setId.startsWith('trueboss_');
+  return {
+    id: nextId(),
+    slot: template.slot,
+    name: template.name,
+    tier: isTrueBoss ? 'trueboss_set' : 'elite_set',
+    setId,
+    classType: template.classType,
+    itemLevel: isTrueBoss ? 35 : 30,
+    stats: { ...template.stats },
+    rollQuality: 0.9,
+    enhanceLevel: 0,
+    enhanceUses: 0,
+    potential: null,
+    ...durabilityFieldsFor(template.slot),
   };
 }
 

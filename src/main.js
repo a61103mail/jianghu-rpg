@@ -6,7 +6,7 @@ const app = document.getElementById('app');
 
 const SHOP_NAMES = { blacksmith: '鐵匠鋪', leather: '皮革店', magic: '法術店', church: '教堂', general: '雜貨店' };
 const SHOP_ORDER = ['blacksmith', 'leather', 'magic', 'church', 'general'];
-const ITEM_TIER_LABEL = { common: '普通', rare: '稀有', epic: '超稀有' };
+const ITEM_TIER_LABEL = { common: '普通', rare: '稀有', epic: '超稀有', elite_set: '菁英套裝', trueboss_set: '真王套裝' };
 function itemTierLabel(tier) { return ITEM_TIER_LABEL[tier] || '普通'; }
 
 // 裝備部位/屬性代碼一律翻成中文顯示,不要讓 weapon/atk/critRatePct 這種英文代碼直接出現在畫面上

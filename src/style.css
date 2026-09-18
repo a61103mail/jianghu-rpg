@@ -193,6 +193,8 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 .item-card.rarity-common { color: #b0b0b0; }
 .item-card.rarity-rare { color: #a855f7; }
 .item-card.rarity-epic { color: #f59e0b; }
+.item-card.rarity-elite_set { color: #22d3ee; }
+.item-card.rarity-trueboss_set { color: #ef4444; font-weight: bold; }
 
 /* 裝備欄槽位視覺化:固定寬高的格子,一眼看出哪些部位有裝備、哪些是空的,取代原本純文字條列。 */
 .equip-slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
@@ -200,6 +202,8 @@ h1, h2, h3 { color: var(--accent); margin: 0 0 8px; }
 .equip-slot.rarity-common { color: #b0b0b0; }
 .equip-slot.rarity-rare { color: #a855f7; }
 .equip-slot.rarity-epic { color: #f59e0b; }
+.equip-slot.rarity-elite_set { color: #22d3ee; }
+.equip-slot.rarity-trueboss_set { color: #ef4444; font-weight: bold; }
 .equip-slot-name { flex: 1; font-size: 13px; margin: 4px 0; word-break: break-all; }
 .equip-slot-actions { display: flex; gap: 4px; }
 .equip-slot-actions .btn { padding: 3px 6px; font-size: 12px; }

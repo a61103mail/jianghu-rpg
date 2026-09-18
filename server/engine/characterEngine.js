@@ -3,6 +3,7 @@ import { getClass, expForNextLevel, STAT_POINTS_PER_LEVEL, MAX_LEVEL } from '../
 import { GEAR_SLOTS } from '../data/itemData.js';
 import { getItemTotalStats } from './itemEngine.js';
 import { computeEvasionRate } from './combatEngine.js';
+import { getSetInfo, CLASS_SPECIAL_STAT_KEY } from '../data/setGearData.js';
 
 export const HP_REGEN_PCT_PER_MINUTE = 0.04; // 氣血自然恢復:每分鐘回復上限的 4%(離線也會累積),城鎮/藥水才是主要恢復手段
 export const MP_REGEN_PCT_PER_MINUTE = 0.06; // 真力自然恢復略快於氣血
@@ -59,9 +60,30 @@ function isItemUsable(item) {
   return (item.durability ?? item.maxDurability) > 0;
 }
 
+// 套裝效果(菁英2件2條/真王4件4條,見 setGearData.js):統計玩家目前裝備中每個 setId 各穿了幾件,
+// 依 tiers 的 count 門檻彙總已解鎖的效果加成。value 是百分比數字(如8代表8%),這裡轉成小數方便套用。
+function computeSetBonuses(save) {
+  const setCounts = {};
+  GEAR_SLOTS.forEach((slot) => {
+    const item = save.equipment[slot];
+    if (!isItemUsable(item) || !item.setId) return;
+    setCounts[item.setId] = (setCounts[item.setId] || 0) + 1;
+  });
+  const bonuses = { atkPowerPct: 0, classSpecialPct: 0, allRawStatsPct: 0, allStatsExceptSpecialPct: 0 };
+  Object.entries(setCounts).forEach(([setId, count]) => {
+    const info = getSetInfo(setId);
+    if (!info) return;
+    info.tiers.forEach((tier) => {
+      if (count >= tier.count) bonuses[tier.key] += tier.value / 100;
+    });
+  });
+  return bonuses;
+}
+
 export function computeStats(save) {
   const cls = getClass(save.classId);
   const alloc = save.allocatedStats || { str: 0, dex: 0, int: 0, luk: 0 };
+  const setBonuses = computeSetBonuses(save);
 
   // 裝備直接提供的原始屬性加成(STR/DEX/INT/LUK):跟玩家自行配點「完全等價」疊加,
   // 一起流入下方攻擊力/防禦/氣血/會心/迴避的衍生公式——而不是額外獨立加在最終數值上。
@@ -77,10 +99,13 @@ export function computeStats(save) {
     gearLuk += item.stats.luk || 0;
   });
 
-  const str = cls.baseStat.str + (alloc.str || 0) + gearStr;
-  const dex = cls.baseStat.dex + (alloc.dex || 0) + gearDex;
-  const int_ = cls.baseStat.int + (alloc.int || 0) + gearInt;
-  const luk = cls.baseStat.luk + (alloc.luk || 0) + gearLuk;
+  // 套裝效果「全屬性%」(allRawStatsPct,真王套裝第3件解鎖):str/dex/int/luk 一起乘算提升,
+  // 要在此處(衍生屬性計算之前)套用,才能連帶把攻擊力/防禦/氣血等下游公式一起放大。
+  const rawStatsMult = 1 + setBonuses.allRawStatsPct;
+  const str = (cls.baseStat.str + (alloc.str || 0) + gearStr) * rawStatsMult;
+  const dex = (cls.baseStat.dex + (alloc.dex || 0) + gearDex) * rawStatsMult;
+  const int_ = (cls.baseStat.int + (alloc.int || 0) + gearInt) * rawStatsMult;
+  const luk = (cls.baseStat.luk + (alloc.luk || 0) + gearLuk) * rawStatsMult;
 
   let maxHp = cls.baseHp + cls.hpPerLevel * (save.level - 1) + str * 3;
   let maxMp = cls.baseMp + cls.mpPerLevel * (save.level - 1) + int_ * 2;
@@ -119,8 +144,6 @@ export function computeStats(save) {
     if (bonus.blockRatePct) blockRatePct += bonus.blockRatePct / 100;
     if (bonus.magicDamageReductionPct) magicDamageReductionPct += bonus.magicDamageReductionPct / 100;
   });
-  blockRatePct = Math.max(0, Math.min(0.95, blockRatePct));
-  magicDamageReductionPct = Math.max(0, Math.min(0.8, magicDamageReductionPct));
 
   // 潛能(方塊洗出的隨機百分比詞條):加總所有已裝備物品的潛能詞條,最後以乘算方式套用在對應屬性上
   // (潛能詞條本身已是小數形式的百分比,如 0.03 代表 +3%,不需要再除以100,跟上方 item.stats.critRatePct 的「百分點」表示法不同)。
@@ -138,14 +161,39 @@ export function computeStats(save) {
       else if (line.key === 'critRatePct') potentialCritRatePct += line.value;
     });
   });
-  if (cls.attackType === 'matk') matk = Math.round(matk * (1 + potentialAtkPowerPct));
-  else atk = Math.round(atk * (1 + potentialAtkPowerPct));
+  // 套裝效果「攻擊力%」(atkPowerPct,菁英/真王套裝第1件即解鎖)跟潛能的攻擊強度%一起套用同一屬性
+  const totalAtkPowerPct = potentialAtkPowerPct + setBonuses.atkPowerPct;
+  if (cls.attackType === 'matk') matk = Math.round(matk * (1 + totalAtkPowerPct));
+  else atk = Math.round(atk * (1 + totalAtkPowerPct));
   def = Math.round(def * (1 + potentialDefPct));
   maxHp = maxHp * (1 + potentialHpPct);
   critRate += potentialCritRatePct;
 
+  // 套裝效果「職業特色屬性%」(classSpecialPct,菁英第2件/真王第2件解鎖):依職業對應到
+  // 格擋率(戰士/牧師)、真氣減傷%(法師,一樣受80%封頂限制)或迴避率(弓箭手)。
+  if (setBonuses.classSpecialPct > 0) {
+    const specialKey = CLASS_SPECIAL_STAT_KEY[save.classId];
+    if (specialKey === 'blockRatePct') blockRatePct += setBonuses.classSpecialPct;
+    else if (specialKey === 'magicDamageReductionPct') magicDamageReductionPct += setBonuses.classSpecialPct;
+    else if (specialKey === 'evasionRate') evasionRate = Math.min(0.8, evasionRate + setBonuses.classSpecialPct);
+  }
+  blockRatePct = Math.max(0, Math.min(0.95, blockRatePct));
+  magicDamageReductionPct = Math.max(0, Math.min(0.8, magicDamageReductionPct));
+
+  // 套裝效果「全部能力%」(allStatsExceptSpecialPct,真王套裝第4件、集滿全套才解鎖的終極效果):
+  // 除了上面已經處理過的職業特色屬性外,其餘全部現有戰鬥屬性一起乘算提升。
+  if (setBonuses.allStatsExceptSpecialPct > 0) {
+    const mult = 1 + setBonuses.allStatsExceptSpecialPct;
+    atk = Math.round(atk * mult);
+    matk = Math.round(matk * mult);
+    def = Math.round(def * mult);
+    maxHp = maxHp * mult;
+    maxMp = maxMp * mult;
+    critRate *= mult;
+  }
+
   return {
-    str, dex, int: int_, luk,
+    str: Math.round(str), dex: Math.round(dex), int: Math.round(int_), luk: Math.round(luk),
     atk, matk, def, critRate, evasionRate, blockRatePct, magicDamageReductionPct,
     maxHp: Math.round(maxHp), maxMp: Math.round(maxMp),
     hp: Math.round(maxHp), mp: Math.round(maxMp), // 相容別名:partyEngine/duelEngine 沿用舊欄位名稱取用「滿血滿真力」初始值
