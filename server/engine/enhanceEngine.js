@@ -113,6 +113,29 @@ export function rollCube(item) {
   return { item, upgraded };
 }
 
+// 抉擇方塊(cube_potential_choice):比一般方塊更貴,固定直接洗出「傳說階」數值範圍的3條詞條
+// (不像一般方塊要先升階到legendary才有3條),且採「先預覽再選擇」流程——玩家看過這次洗出的
+// 3條新詞條後,自己決定要套用新的還是保留原本的潛能,不滿意可以直接放棄不套用。
+// 用記憶體暫存每位玩家「最近一次抉擇方塊預覽的結果」,避免前端能竄改要套用的數值
+// (套用/取消時一律讀伺服器暫存的結果,不接受前端直接傳入的詞條內容)。
+const pendingChoicePreviews = new Map(); // userId -> { itemId, preview: { tier, lines } }
+
+export function rollCubeChoicePreview(userId, itemId) {
+  const preview = { tier: 'legendary', lines: rollLinesForTier('legendary') };
+  pendingChoicePreviews.set(userId, { itemId, preview });
+  return preview;
+}
+
+export function getPendingChoicePreview(userId, itemId) {
+  const pending = pendingChoicePreviews.get(userId);
+  if (!pending || pending.itemId !== itemId) return null;
+  return pending.preview;
+}
+
+export function clearChoicePreview(userId) {
+  pendingChoicePreviews.delete(userId);
+}
+
 export function getEnhanceItemAppliesToSlot(appliesTo, slot) {
   if (appliesTo === 'any') return true;
   return appliesTo === slotCategory(slot);

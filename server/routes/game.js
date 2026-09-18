@@ -14,7 +14,7 @@ import { getSetInfo, getSetRecipesForShop, getSetRecipeById } from '../data/setG
 import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
 import { hasFallenLoot, peekRandomFallenLoot, claimFallenLoot } from '../engine/fallenLootEngine.js';
-import { rollEnhance, rollCube, getEnhanceItemAppliesToSlot, ENHANCE_MAX_USES } from '../engine/enhanceEngine.js';
+import { rollEnhance, rollCube, getEnhanceItemAppliesToSlot, ENHANCE_MAX_USES, rollCubeChoicePreview, getPendingChoicePreview, clearChoicePreview } from '../engine/enhanceEngine.js';
 import { trueBossStatusFor, isTrueBossReady, markTrueBossDefeated } from '../engine/worldBossEngine.js';
 
 const getSaveStmt = db.prepare('SELECT data FROM saves WHERE user_id = ?');
@@ -996,6 +996,41 @@ export default function gameRoutes() {
     addLog(save, `為「${item.name}」洗鍊潛能${result.upgraded ? `,升階至【${getTierNameZh(item.potential.tier)}】!` : '。'}`);
     await saveGame(req.user.userId, save);
     res.json({ state: publicState(save), upgraded: result.upgraded, item });
+  });
+
+  // 抉擇方塊(cube_potential_choice):固定洗出3條詞條,但「先預覽再選擇」——這裡只消耗方塊+
+  // 產生預覽(暫存在伺服器記憶體,不接受前端直接帶入詞條內容,避免竄改數值),不會修改裝備本身。
+  router.post('/equipment/cube-choice-preview', async (req, res) => {
+    const { itemId } = req.body || {};
+    const save = await loadSave(req.user.userId);
+    const item = findEquippedOrInventoryItem(save, itemId);
+    if (!item) return res.status(404).json({ error: '找不到該裝備' });
+    if ((save.consumables.cube_potential_choice || 0) < 1) return res.status(400).json({ error: '抉擇方塊數量不足' });
+    save.consumables.cube_potential_choice -= 1;
+    const preview = rollCubeChoicePreview(req.user.userId, itemId);
+    await saveGame(req.user.userId, save);
+    res.json({ state: publicState(save), preview });
+  });
+
+  // 套用抉擇方塊預覽結果:讀取伺服器暫存的預覽(不是前端傳來的資料),套用後清除暫存
+  router.post('/equipment/cube-choice-apply', async (req, res) => {
+    const { itemId } = req.body || {};
+    const save = await loadSave(req.user.userId);
+    const item = findEquippedOrInventoryItem(save, itemId);
+    if (!item) return res.status(404).json({ error: '找不到該裝備' });
+    const preview = getPendingChoicePreview(req.user.userId, itemId);
+    if (!preview) return res.status(400).json({ error: '沒有可套用的預覽結果,請先使用抉擇方塊' });
+    item.potential = preview;
+    clearChoicePreview(req.user.userId);
+    addLog(save, `為「${item.name}」套用了抉擇方塊洗出的新潛能。`);
+    await saveGame(req.user.userId, save);
+    res.json({ state: publicState(save), item });
+  });
+
+  // 放棄抉擇方塊預覽結果:保留原本潛能不變(方塊已消耗,不退還),僅清除伺服器暫存狀態
+  router.post('/equipment/cube-choice-cancel', async (req, res) => {
+    clearChoicePreview(req.user.userId);
+    res.json({ ok: true });
   });
 
   // 裝備製作:稀有配方(blacksmith/leather/magic/church)與套裝配方(elite/trueboss set,

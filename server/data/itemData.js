@@ -225,14 +225,18 @@ export function getPotion(id) {
 // 裝備強化用消耗品:雜貨店固定金幣購買,套用於 enhanceEngine.js。
 // 卷軸:依部位分四種(武器/防具/副手/飾品),強化成功會 +1 強化等級並增加固定數值,失敗只損失卷軸本身(不會破壞裝備)。
 // 方塊:洗裝備的「潛能」(隨機百分比詞條),不分部位、任何裝備都能用,見 enhanceEngine.js 的機率與詞條池。
+// 抉擇方塊(cube_potential_choice):比一般潛能方塊更貴的高階版本——固定直接洗出3條詞條(不像
+// 一般方塊要先洗到傳說階才有3條),且採「先預覽再選擇」流程:玩家可以看過這次洗出的3條新詞條後,
+// 自己選擇要套用新的還是保留原本的潛能,不滿意可以直接放棄(但方塊已消耗,見 enhanceEngine.js)。
 export const ENHANCE_ITEMS = {
   scroll_weapon: { id: 'scroll_weapon', name: '武器強化卷軸', kind: 'scroll', appliesTo: 'weapon', price: 60 },
   scroll_armor: { id: 'scroll_armor', name: '防具強化卷軸', kind: 'scroll', appliesTo: 'armor', price: 60 },
   scroll_offhand: { id: 'scroll_offhand', name: '副手強化卷軸', kind: 'scroll', appliesTo: 'offhand', price: 60 },
   scroll_accessory: { id: 'scroll_accessory', name: '飾品強化卷軸', kind: 'scroll', appliesTo: 'accessory', price: 60 },
   cube_potential: { id: 'cube_potential', name: '潛能方塊', kind: 'cube', appliesTo: 'any', price: 150 },
+  cube_potential_choice: { id: 'cube_potential_choice', name: '抉擇方塊', kind: 'cube_choice', appliesTo: 'any', price: 320 },
 };
-export const ENHANCE_ITEM_ORDER = ['scroll_weapon', 'scroll_armor', 'scroll_offhand', 'scroll_accessory', 'cube_potential'];
+export const ENHANCE_ITEM_ORDER = ['scroll_weapon', 'scroll_armor', 'scroll_offhand', 'scroll_accessory', 'cube_potential', 'cube_potential_choice'];
 
 export function getEnhanceItem(id) {
   return ENHANCE_ITEMS[id];

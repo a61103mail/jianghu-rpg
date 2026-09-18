@@ -56,6 +56,7 @@ const S = {
   duelMsg: '',
   onlinePlayers: [], // 在線玩家名單(不含自己),供決鬥畫面直接點選挑戰對象,不用手動輸入帳號
   enhanceModalItemId: null, // 目前開啟強化/洗潛能彈出視窗的裝備 id,null 代表沒開啟(見 renderEnhanceModal)
+  cubeChoicePreview: null, // 抉擇方塊「先預覽再選擇」的暫存結果:{ itemId, preview: { tier, lines } },套用/放棄後清空
   auctionFilter: { potentialKeys: new Set(), minAtk: '', minEnhanceUses: '' }, // 交易所搜尋條件:潛能種類(複選)/攻擊或魔攻最小值/強化次數最少幾次
 };
 
@@ -719,9 +720,12 @@ function renderEnhanceModal() {
   const scrollId = slotToScrollId(item.slot);
   const scroll = consumables.find((c) => c.id === scrollId);
   const cube = consumables.find((c) => c.id === 'cube_potential');
+  const cubeChoice = consumables.find((c) => c.id === 'cube_potential_choice');
   const uses = item.enhanceUses || 0;
   const usesLeft = ENHANCE_MAX_USES - uses;
   const close = () => { S.enhanceModalItemId = null; render(); };
+  // 抉擇方塊預覽:只在「目前這件裝備」有暫存預覽時才顯示選擇區塊
+  const preview = S.cubeChoicePreview && S.cubeChoicePreview.itemId === item.id ? S.cubeChoicePreview.preview : null;
   let overlay;
   overlay = h('div', {
     class: 'modal-overlay',
@@ -760,7 +764,51 @@ function renderEnhanceModal() {
             } catch (e) { S.error = e.message; render(); }
           },
         }, `洗潛能(需${cube?.name || '方塊'}x1,持有${cube?.count || 0})`),
+        // 抉擇方塊:固定洗3條,但用前先看過結果才決定要不要套用——已有預覽時這顆按鈕先隱藏,避免重複消耗
+        !preview ? h('button', {
+          class: 'btn',
+          title: `消耗1顆${cubeChoice?.name || ''}。固定直接洗出3條【傳說】數值範圍的詞條,套用前可以先看過結果,自己選擇要換成新的還是保留原本的潛能——但方塊一經使用即消耗,不論最後選哪邊都不會退還。`,
+          onclick: async () => {
+            try {
+              const r = await api.cubeChoicePreview(item.id);
+              S.cubeChoicePreview = { itemId: item.id, preview: r.preview };
+              S.state = r.state;
+              S.error = '已洗出新的3條詞條,請選擇是否套用。';
+              render();
+            } catch (e) { S.error = e.message; render(); }
+          },
+        }, `抉擇洗潛能(需${cubeChoice?.name || '抉擇方塊'}x1,持有${cubeChoice?.count || 0})`) : null,
       ]),
+      // 抉擇方塊預覽結果:並排顯示「新洗出的3條」與「目前原本的」,方便直接比較後再決定
+      preview ? h('div', { style: 'margin-top:12px;padding:10px;border:1px dashed var(--panel-border);border-radius:6px;' }, [
+        h('div', { style: `color:${POTENTIAL_TIER_COLOR.legendary};font-weight:bold;` }, '這次洗出的新詞條(尚未套用):'),
+        h('div', {}, preview.lines.map((l) => `${l.label}+${Math.round(l.value * 1000) / 10}%`).join('、')),
+        h('div', { style: 'margin-top:8px;display:flex;gap:8px;' }, [
+          h('button', {
+            class: 'btn primary',
+            onclick: async () => {
+              try {
+                const r = await api.cubeChoiceApply(item.id);
+                S.error = '已套用新的潛能詞條!';
+                S.state = r.state;
+                S.cubeChoicePreview = null;
+                render();
+              } catch (e) { S.error = e.message; render(); }
+            },
+          }, '套用新詞條'),
+          h('button', {
+            class: 'btn',
+            onclick: async () => {
+              try {
+                await api.cubeChoiceCancel(item.id);
+                S.error = '已保留原本的潛能,新詞條捨棄不用。';
+                S.cubeChoicePreview = null;
+                render();
+              } catch (e) { S.error = e.message; render(); }
+            },
+          }, '保留原本'),
+        ]),
+      ]) : null,
       h('button', { class: 'btn', style: 'margin-top:16px;', onclick: close }, '關閉'),
     ]),
   ]);
