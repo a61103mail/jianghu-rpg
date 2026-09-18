@@ -96,8 +96,6 @@ function instantiatePartyEnemy(monsterId) {
   const m = getMonster(monsterId);
   return {
     monsterId: m.id, name: m.name, level: m.level, hp: m.hp, maxHp: m.hp, atk: m.atk, def: m.def, critRate: m.critRate, exp: m.exp, tier: m.tier || 'normal', dropTable: m.dropTable,
-    // 組隊限定加成掉落(團隊戰印等):只有在組隊副本擊敗大王才會有機會拿到,solo/單人戰鬥不會出現這個欄位
-    partyBonusDrop: m.partyBonusDrop || null,
     physicalResistPct: m.physicalResistPct || 0,
     magicResistPct: m.magicResistPct || 0,
     enrageHpPct: m.enrageHpPct ?? null,
@@ -340,9 +338,7 @@ export function partyMemberAction(party, userId, action, extra = {}) {
     const defeatedExp = Math.round(combat.enemies.reduce((sum, e) => sum + e.exp, 0) * mult);
     combat.totalExp += defeatedExp;
     combat.defeatedDropTables.push(...combat.enemies.map((e) => {
-      // 組隊限定的加成掉落(團隊戰印等)併入同一份 dropTable 一起擲骰,呼叫端不需要另外處理
-      const fullDropTable = e.partyBonusDrop ? [...(e.dropTable || []), e.partyBonusDrop] : e.dropTable;
-      const dropTable = (fullDropTable || []).map((d) => ({ ...d, chance: Math.min(1, d.chance * mult) }));
+      const dropTable = (e.dropTable || []).map((d) => ({ ...d, chance: Math.min(1, d.chance * mult) }));
       return { dropTable, tier: e.tier, level: e.level };
     }));
     lines.push(`本波敵人已全數擊敗!獲得 ${defeatedExp} 點經驗。`);

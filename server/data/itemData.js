@@ -33,7 +33,10 @@ export const ITEMS = {
   gear_material_dark_swamp: { id: 'gear_material_dark_swamp', name: '幽暗沼澤鍛材', kind: 'material', basePrice: 27 },
   gear_material_ruined_borderlands: { id: 'gear_material_ruined_borderlands', name: '遺跡邊境鍛材', kind: 'material', basePrice: 38 },
 
-  // ---- 稀有素材(僅小王/大王掉落,製作稀有/超稀有裝備專用;賣給雜貨店的價格遠高於一般素材,反映其稀有度)----
+  // ---- 稀有素材(舊制,已停用/不再掉落——原本對應「僅小王/大王掉落,製作稀有/超稀有裝備」的
+  // 舊配方,裝備地圖化重構後已被 elite_shard/trueboss_crystal 的套裝製作路線完全取代,現在沒有
+  // 任何配方會用到。已從全部怪物 dropTable 移除,不會再掉落;僅保留定義,讓玩家過去已持有的存量
+  // 仍能正常賣給雜貨店回收換錢,不會卡在背包裡)----
   slime_core: { id: 'slime_core', name: '史萊姆核心', kind: 'rare_material', shop: 'magic', basePrice: 20 },
   boar_fang: { id: 'boar_fang', name: '巨牙野豬獠牙', kind: 'rare_material', shop: 'blacksmith', basePrice: 25 },
   captain_insignia: { id: 'captain_insignia', name: '隊長徽記', kind: 'rare_material', shop: 'leather', basePrice: 35 },
@@ -45,9 +48,9 @@ export const ITEMS = {
   knight_emblem: { id: 'knight_emblem', name: '騎士徽章', kind: 'rare_material', shop: 'blacksmith', basePrice: 160 },
   king_crown_shard: { id: 'king_crown_shard', name: '王冠碎片', kind: 'rare_material', shop: 'church', basePrice: 220 },
 
-  // ---- 組隊限定素材(僅組隊副本擊敗大王才有機率掉落,單人闖蕩/決鬥完全不會出現)----
-  // 一個人刷不到,逼玩家真的要湊隊伍打組隊副本才能取得,用來把「超稀有」裝備配方(EPIC_TIER_BOSS_MATS)
-  // 從單純「刷完全部單人大王」再往上加一道「你也要真的組隊打過王」的門檻,讓組隊本身有不可取代的價值。
+  // ---- 組隊限定素材(舊制,已停用/不再掉落——原本用來把「超稀有」裝備配方從單人刷王再加一道
+  // 「要真的組隊打過王」的門檻,該配方已被裝備地圖化重構完全取代,現在沒有任何配方會用到。
+  // 已從 partyBonusDrop 移除,不會再掉落;僅保留定義,讓玩家過去已持有的存量仍能賣給雜貨店回收)----
   party_seal: { id: 'party_seal', name: '團隊戰印', kind: 'party_material', basePrice: 150 },
 
   // ---- 套裝製作素材(每張地圖各自專屬;套裝終究強於一般鍛材裝備,取得難度也該更高,因此菁英/真王

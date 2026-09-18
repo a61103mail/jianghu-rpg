@@ -746,10 +746,11 @@ export default function gameRoutes() {
       combat.enemies.forEach((enemy) => {
         totalExp += enemy.exp;
         (enemy.dropTable || []).forEach((d) => {
-          // 稀有素材(僅小王/大王掉落,製作稀有/超稀有裝備專用)不受等級差懲罰——回頭刷早期地圖的王
-          // 拿製作材料是正常玩法(稀有階配方本來就固定要打第一章的王,超稀有階要打其他章節的王),
-          // 不該被誤判成「刷簡單地圖賺錢」而被懲罰。只有雜物(純賣錢用)跟一般素材才會衰減。
-          const dropPenalty = d.kind === 'rare_material' ? 1 : rewardPenalty;
+          // 套裝素材(elite_shard/trueboss_crystal,僅菁英/真王掉落,製作該地圖套裝專用)不受等級差
+          // 懲罰——回頭刷早期地圖的王拿套裝材料是正常玩法(套裝配方本來就固定綁該地圖,不會因為
+          // 玩家後來練到更高等級就不能再回去湊材料),不該被誤判成「刷簡單地圖賺錢」而被懲罰。
+          // 只有雜物(純賣錢用)跟一般鍛材(gear_material,做基本裝備用)才會衰減。
+          const dropPenalty = d.kind === 'set_material' ? 1 : rewardPenalty;
           if (Math.random() < d.chance * dropPenalty) {
             const amt = d.min + Math.floor(Math.random() * (d.max - d.min + 1));
             if (amt <= 0) return; // min:0 的掉落(如抉擇方塊)骰到0時,不加背包也不顯示戰報,避免出現「xxx x0」

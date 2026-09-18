@@ -29,9 +29,14 @@ const TRUEBOSS_ENHANCE_DROPS = [
   CUBE_CHOICE_DROP,
 ];
 // 套裝製作素材:刻意「不保底」,可能什麼都拿不到(數量含0)——套裝比一般裝備強,材料理應比
-// 一般稀有素材更稀有難拿,兩者的稀有度不能顛倒。菁英(miniboss/boss)掉落該地圖的「菁英碎片」
+// 一般鍛材更稀有難拿,兩者的稀有度不能顛倒。菁英(miniboss/boss)掉落該地圖的「菁英碎片」
 // (0~2個),真王掉落「真王結晶」(0~3個,終極真王額外覆寫到0~4),兩者皆用於在商店製作對應
-// 套裝(見 setGearData.js)。一般稀有素材(rare_material)才是保底1~3個,見下方各怪物 dropTable。
+// 套裝(見 setGearData.js)。
+// 註:舊制的「稀有素材」(rare_material,如史萊姆核心/騎士徽章等)與「組隊限定素材」
+// (party_material,團隊戰印)原本對應已被裝備地圖化取代的舊 rare/epic 裝備配方,現在完全沒有
+// 任何配方會用到,已從全部怪物 dropTable 移除、不再掉落,避免玩家打了王卻拿到「找不到地方用」
+// 的材料。ITEMS 定義本身保留(itemData.js),讓玩家過去已持有的存量仍能正常賣給雜貨店回收,
+// 不會卡在背包裡動彈不得。
 function eliteShardDrop(mapId) {
   return { id: `elite_shard_${mapId}`, kind: 'set_material', chance: 1, min: 0, max: 2 };
 }
@@ -68,7 +73,6 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '黏液噴濺', telegraphText: '的軀體開始劇烈鼓動,似乎在醞釀噴發!', triggerEveryTurns: 4, dmgMult: 2.2 },
     dropTable: [
-      { id: 'slime_core', kind: 'rare_material', shop: 'magic', chance: 1, min: 1, max: 3 },
       { id: 'slime_jelly', kind: 'junk', chance: 1, min: 3, max: 6 },
       eliteShardDrop('novice_plains'),
       ...MINIBOSS_ENHANCE_DROPS,
@@ -80,13 +84,10 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '狂怒衝撞', telegraphText: '刨地怒吼,蓄勢待發準備衝鋒!', triggerEveryTurns: 4, dmgMult: 2.4 },
     dropTable: [
-      { id: 'boar_fang', kind: 'rare_material', shop: 'blacksmith', chance: 1, min: 1, max: 3 },
       { id: 'boar_hide', kind: 'junk', chance: 1, min: 4, max: 8 },
       eliteShardDrop('novice_plains'),
       ...BOSS_ENHANCE_DROPS,
     ],
-    // 組隊限定加成掉落:只有在組隊副本擊敗這隻王才有機會拿到,單人闖蕩/決鬥不會出現(見 partyEngine.js)
-    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
   // 真王(每張地圖獨一無二的終極首領,強度抓在「兩張地圖之後」的量級):不是明確挑戰按鈕,
   // 一樣是隨機遭遇(機率遠低於菁英),全服共用重生計時(見 worldBossEngine.js),不是個人各自獨立進度。
@@ -96,8 +97,6 @@ export const MONSTERS = {
     enrageHpPct: 0.3, enrageAtkMult: 1.5,
     chargeSkill: { name: '巨木衝撞', telegraphText: '龐大的身軀開始積蓄力量,樹根深深沒入大地!', triggerEveryTurns: 3, dmgMult: 2.8 },
     dropTable: [
-      { id: 'slime_core', kind: 'rare_material', shop: 'magic', chance: 1, min: 1, max: 3 },
-      { id: 'boar_fang', kind: 'rare_material', shop: 'blacksmith', chance: 1, min: 1, max: 3 },
       { id: 'slime_jelly', kind: 'junk', chance: 1, min: 10, max: 16 },
       trueBossCrystalDrop('novice_plains'),
       ...TRUEBOSS_ENHANCE_DROPS,
@@ -125,7 +124,6 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '蓄力重斬', telegraphText: '將兵器高高舉起,似乎要使出全力一擊!', triggerEveryTurns: 4, dmgMult: 2.3 },
     dropTable: [
-      { id: 'captain_insignia', kind: 'rare_material', shop: 'leather', chance: 1, min: 1, max: 3 },
       { id: 'goblin_ear', kind: 'junk', chance: 1, min: 4, max: 7 },
       eliteShardDrop('goblin_forest'),
       ...MINIBOSS_ENHANCE_DROPS,
@@ -137,12 +135,10 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '酋長怒吼衝擊', telegraphText: '高舉戰斧仰天怒吼,殺氣逐漸凝聚!', triggerEveryTurns: 4, dmgMult: 2.5 },
     dropTable: [
-      { id: 'chieftain_totem', kind: 'rare_material', shop: 'magic', chance: 1, min: 1, max: 3 },
       { id: 'goblin_bow_string', kind: 'junk', chance: 1, min: 5, max: 9 },
       eliteShardDrop('goblin_forest'),
       ...BOSS_ENHANCE_DROPS,
     ],
-    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
   goblin_emperor: {
     id: 'goblin_emperor', name: '哥布林大帝', level: 28, hp: 2500, atk: 53, def: 33, critRate: 0.18, exp: 3000, tier: 'trueboss',
@@ -150,8 +146,6 @@ export const MONSTERS = {
     enrageHpPct: 0.3, enrageAtkMult: 1.55,
     chargeSkill: { name: '帝王審判斬', telegraphText: '高舉象徵至高權柄的巨斧,全軍為之震懾!', triggerEveryTurns: 3, dmgMult: 2.9 },
     dropTable: [
-      { id: 'captain_insignia', kind: 'rare_material', shop: 'leather', chance: 1, min: 1, max: 3 },
-      { id: 'chieftain_totem', kind: 'rare_material', shop: 'magic', chance: 1, min: 1, max: 3 },
       { id: 'goblin_ear', kind: 'junk', chance: 1, min: 12, max: 18 },
       trueBossCrystalDrop('goblin_forest'),
       ...TRUEBOSS_ENHANCE_DROPS,
@@ -179,7 +173,6 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '蛛絲纏繞', telegraphText: '吐出大量蛛絲,似乎在準備一記致命纏繞!', triggerEveryTurns: 4, dmgMult: 2.3 },
     dropTable: [
-      { id: 'spider_silk_gland', kind: 'rare_material', shop: 'leather', chance: 1, min: 1, max: 3 },
       { id: 'bat_wing', kind: 'junk', chance: 1, min: 5, max: 8 },
       eliteShardDrop('stone_mines'),
       ...MINIBOSS_ENHANCE_DROPS,
@@ -191,12 +184,10 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '碎石重擊', telegraphText: '緩緩舉起巨大的石拳,大地為之震動!', triggerEveryTurns: 4, dmgMult: 2.6 },
     dropTable: [
-      { id: 'golem_core', kind: 'rare_material', shop: 'blacksmith', chance: 1, min: 1, max: 3 },
       { id: 'rat_tail', kind: 'junk', chance: 1, min: 6, max: 10 },
       eliteShardDrop('stone_mines'),
       ...BOSS_ENHANCE_DROPS,
     ],
-    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
   abyssal_stone_dragon: {
     id: 'abyssal_stone_dragon', name: '深淵岩龍', level: 32, hp: 3300, atk: 67, def: 44, critRate: 0.16, exp: 4400, tier: 'trueboss',
@@ -204,8 +195,6 @@ export const MONSTERS = {
     enrageHpPct: 0.3, enrageAtkMult: 1.6,
     chargeSkill: { name: '深淵崩裂吐息', telegraphText: '深邃的雙眼泛起幽光,礦坑深處傳來震耳欲聾的低鳴!', triggerEveryTurns: 3, dmgMult: 3.0 },
     dropTable: [
-      { id: 'spider_silk_gland', kind: 'rare_material', shop: 'leather', chance: 1, min: 1, max: 3 },
-      { id: 'golem_core', kind: 'rare_material', shop: 'blacksmith', chance: 1, min: 1, max: 3 },
       { id: 'rat_tail', kind: 'junk', chance: 1, min: 14, max: 20 },
       trueBossCrystalDrop('stone_mines'),
       ...TRUEBOSS_ENHANCE_DROPS,
@@ -233,7 +222,6 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '詛咒凝聚', telegraphText: '喃喃念咒,周身黑氣逐漸凝聚成形!', triggerEveryTurns: 4, dmgMult: 2.4 },
     dropTable: [
-      { id: 'witch_charm', kind: 'rare_material', shop: 'magic', chance: 1, min: 1, max: 3 },
       { id: 'tentacle_ooze', kind: 'junk', chance: 1, min: 6, max: 9 },
       eliteShardDrop('dark_swamp'),
       ...MINIBOSS_ENHANCE_DROPS,
@@ -245,12 +233,10 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '沼氣吐息', telegraphText: '深吸一口氣,喉間泛起詭異的綠光!', triggerEveryTurns: 4, dmgMult: 2.6 },
     dropTable: [
-      { id: 'drake_scale', kind: 'rare_material', shop: 'church', chance: 1, min: 1, max: 3 },
       { id: 'toad_venom_sac', kind: 'junk', chance: 1, min: 7, max: 11 },
       eliteShardDrop('dark_swamp'),
       ...BOSS_ENHANCE_DROPS,
     ],
-    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
   ancient_swamp_deity: {
     id: 'ancient_swamp_deity', name: '太古沼澤邪神', level: 35, hp: 4200, atk: 78, def: 52, critRate: 0.2, exp: 5600, tier: 'trueboss',
@@ -258,8 +244,6 @@ export const MONSTERS = {
     enrageHpPct: 0.3, enrageAtkMult: 1.65,
     chargeSkill: { name: '混沌深淵吞噬', telegraphText: '沼澤深處泛起詭異漩渦,無數黑影自水面下浮現!', triggerEveryTurns: 3, dmgMult: 3.1 },
     dropTable: [
-      { id: 'witch_charm', kind: 'rare_material', shop: 'magic', chance: 1, min: 1, max: 3 },
-      { id: 'drake_scale', kind: 'rare_material', shop: 'church', chance: 1, min: 1, max: 3 },
       { id: 'tentacle_ooze', kind: 'junk', chance: 1, min: 16, max: 22 },
       trueBossCrystalDrop('dark_swamp'),
       ...TRUEBOSS_ENHANCE_DROPS,
@@ -287,7 +271,6 @@ export const MONSTERS = {
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '絕望重劈', telegraphText: '雙手緊握巨劍高舉過頂,散發不祥的氣息!', triggerEveryTurns: 4, dmgMult: 2.5 },
     dropTable: [
-      { id: 'knight_emblem', kind: 'rare_material', shop: 'blacksmith', chance: 1, min: 1, max: 3 },
       { id: 'guardian_plating', kind: 'junk', chance: 1, min: 7, max: 10 },
       eliteShardDrop('ruined_borderlands'),
       ...MINIBOSS_ENHANCE_DROPS,
@@ -299,12 +282,10 @@ export const MONSTERS = {
     enrageHpPct: 0.35, enrageAtkMult: 1.5,
     chargeSkill: { name: '王座審判', telegraphText: '緩緩起身,王座周圍的遺跡碎石開始漂浮!', triggerEveryTurns: 3, dmgMult: 2.8 },
     dropTable: [
-      { id: 'king_crown_shard', kind: 'rare_material', shop: 'church', chance: 1, min: 1, max: 3 },
       { id: 'shadow_fragment', kind: 'junk', chance: 1, min: 8, max: 12 },
       eliteShardDrop('ruined_borderlands'),
       ...BOSS_ENHANCE_DROPS,
     ],
-    partyBonusDrop: { id: 'party_seal', kind: 'party_material', chance: 0.25, min: 1, max: 1 },
   },
   primordial_ruin_overlord: {
     id: 'primordial_ruin_overlord', name: '太初遺跡神皇', level: 38, hp: 5600, atk: 92, def: 62, critRate: 0.22, exp: 7500, tier: 'trueboss',
@@ -312,8 +293,6 @@ export const MONSTERS = {
     enrageHpPct: 0.35, enrageAtkMult: 1.7,
     chargeSkill: { name: '神皇終焉審判', telegraphText: '太初遺跡的碎石盡數浮起,籠罩在令人窒息的絕對威壓之下!', triggerEveryTurns: 2, dmgMult: 3.3 },
     dropTable: [
-      { id: 'knight_emblem', kind: 'rare_material', shop: 'blacksmith', chance: 1, min: 1, max: 3 },
-      { id: 'king_crown_shard', kind: 'rare_material', shop: 'church', chance: 1, min: 1, max: 3 },
       { id: 'shadow_fragment', kind: 'junk', chance: 1, min: 18, max: 25 },
       { ...trueBossCrystalDrop('ruined_borderlands'), max: 4 }, // 終極真王:結晶數量上限比其他四隻更高(0~4,其餘皆0~3)
       ...TRUEBOSS_ENHANCE_DROPS,
