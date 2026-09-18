@@ -947,9 +947,12 @@ export default function gameRoutes() {
     save.consumables[scrollId] -= 1;
     const result = rollEnhance(item);
     const levelText = item.enhanceLevel >= 0 ? `+${item.enhanceLevel}` : `${item.enhanceLevel}`;
-    addLog(save, result.success ? `強化「${item.name}」這次是加強!目前淨強化 ${levelText}(還可使用 ${result.usesLeft} 次)。` : `強化「${item.name}」這次是削弱,目前淨強化 ${levelText}(還可使用 ${result.usesLeft} 次)。`);
+    const deltaText = result.delta > 0 ? `+${result.delta}` : `${result.delta}`;
+    // delta 是 -3~+3 均勻隨機,0 代表這次沒有任何效果(不算加強也不算削弱),要跟真正的加強/削弱分開講清楚
+    const resultDesc = result.delta > 0 ? `這次是加強(${deltaText})` : result.delta < 0 ? `這次是削弱(${deltaText})` : '這次沒有任何效果(抽到0)';
+    addLog(save, `強化「${item.name}」${resultDesc},目前淨強化 ${levelText}(還可使用 ${result.usesLeft} 次)。`);
     await saveGame(req.user.userId, save);
-    res.json({ state: publicState(save), success: result.success, usesLeft: result.usesLeft, deltas: result.deltas, item });
+    res.json({ state: publicState(save), success: result.success, delta: result.delta, usesLeft: result.usesLeft, deltas: result.deltas, item });
   });
 
   // 潛能洗鍊:消耗一顆方塊,沒有潛能就從稀有開始,已有則重洗詞條並有機率升階

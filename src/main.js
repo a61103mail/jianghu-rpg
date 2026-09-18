@@ -660,8 +660,8 @@ function potentialLine(item) {
 }
 
 // 強化(卷軸)常數:須與後端 enhanceEngine.js 完全一致,純供前端顯示文字用。
-// 新制不再是「穩定往上疊、成功率隨等級遞減」,而是每次固定 50/50 機率決定這次是加強還是削弱,
-// 幅度固定 ±3(裝備上每一項現有屬性一起變動),每件裝備最多用滿 5 次。
+// 新制不再是「穩定往上疊、成功率隨等級遞減」,而是每次從 -3~+3(共7個整數,機率均等)隨機抽一個
+// 變動量,套用到裝備上每一項現有屬性一起變動,每件裝備最多用滿 5 次。
 const ENHANCE_MAX_USES = 5;
 function slotToScrollId(slot) {
   if (slot === 'weapon') return 'scroll_weapon';
@@ -685,17 +685,19 @@ function renderEnhanceControls(item) {
     usesLeft > 0
       ? h('button', {
           class: 'btn',
-          title: `消耗1張${scroll?.name || ''}。50%機率讓裝備「全部現有屬性」一起+3,50%機率一起-3——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差。`,
+          title: `消耗1張${scroll?.name || ''}。每次從 -3~+3 之間隨機抽一個數值(機率平均,7種結果各約1/7)套用到裝備「全部現有屬性」——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差,也可能剛好抽到0完全沒變化。`,
           onclick: async () => {
             try {
               const r = await api.enhanceItem(item.id, scrollId);
               const netText = r.item.enhanceLevel >= 0 ? `+${r.item.enhanceLevel}` : `${r.item.enhanceLevel}`;
-              S.error = r.success ? `強化成功,這次是加強!目前淨強化 ${netText}(還可使用${r.usesLeft}次)` : `強化失敗,這次是削弱。目前淨強化 ${netText}(還可使用${r.usesLeft}次)`;
+              const deltaText = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+              const resultDesc = r.delta > 0 ? `這次是加強(${deltaText})` : r.delta < 0 ? `這次是削弱(${deltaText})` : '這次沒有任何效果(抽到0)';
+              S.error = `強化完成,${resultDesc}。目前淨強化 ${netText}(還可使用${r.usesLeft}次)`;
               S.state = r.state;
               render();
             } catch (e) { S.error = e.message; render(); }
           },
-        }, `強化(目前${levelText},50%+3/50%-3,還可用${usesLeft}/${ENHANCE_MAX_USES}次,需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
+        }, `強化(目前${levelText},每次隨機-3~+3,還可用${usesLeft}/${ENHANCE_MAX_USES}次,需${scroll?.name || '卷軸'}x1,持有${scroll?.count || 0})`)
       : h('span', { class: 'hint' }, `已用完全部 ${ENHANCE_MAX_USES} 次強化機會(目前淨強化 ${levelText})`),
     h('button', {
       class: 'btn',

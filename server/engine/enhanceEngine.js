@@ -1,11 +1,12 @@
 // 裝備強化引擎(奇幻練功MMO):對應「卷軸」與「方塊」兩套機制。
-// 卷軸(強化):每件裝備最多使用 5 次,每次「全部現有屬性」一起 ±3(百分比類屬性以百分點為單位,
-// 即 +3 代表 +3 個百分點=+0.03),正負各半機率,不是穩定往上疊的「保證進步」系統,而是真正有賭注——
-// 用得好可以到 +15,運氣差也可能弄到 -15,不再區分「只強化攻擊力」,裝備上不管哪個屬性都會一起變動。
+// 卷軸(強化):每件裝備最多使用 5 次,每次從 -3~+3(共7個整數,均勻分布、機率平均,不是只有
+// +3/-3兩個極端值)隨機抽一個變動量,同時套用到裝備「全部現有屬性」(百分比類屬性以百分點為單位,
+// 即抽到 +3 代表該次+3個百分點=+0.03)。運氣好可以5次都抽到+3、一路衝到+15,運氣差也可能一路
+// 摸到-15,中間值(-2,-1,0,1,2)出現機率均等——真正的賭注,不是穩定往上疊的「保證進步」系統。
 // 方塊(潛能):洗出 1~3 條隨機百分比詞條,分稀有/史詩/傳說三階,使用時有機率讓潛能整體升階。
 
 export const ENHANCE_MAX_USES = 5;
-const ENHANCE_DELTA = 3; // 每次強化的變動量:整數類屬性(atk/def/hp等)為±3點,百分比類屬性(帶Pct後綴)為±3個百分點(±0.03)
+const ENHANCE_DELTA_MAX = 3; // 每次強化變動量的絕對值上限:實際變動量是 [-3, +3] 均勻分布隨機整數(含0),不是固定值
 
 // 舊版相容:先前 UI/呼叫端可能還引用 ENHANCE_MAX_LEVEL 這個名稱,維持匯出但語意改為「最大使用次數」
 export const ENHANCE_MAX_LEVEL = ENHANCE_MAX_USES;
@@ -18,32 +19,32 @@ function slotCategory(slot) {
   return 'accessory';
 }
 
-// 對裝備套用一次強化卷軸:每個現有的 item.stats 欄位各自獨立擲一次正負號,50/50 機率,
-// 幅度固定 ±3(百分比類屬性則是 ±3 個百分點)。回傳 { success, item, deltas, usesLeft }。
-// success 這裡代表「整體是加強(正)還是削弱(負)」,由本次擲出的正負號決定,同一次強化裡
-// 所有屬性一律同號(不會出現「攻擊力變強但防禦力變弱」這種同一次操作卻互相矛盾的結果)。
+// 對裝備套用一次強化卷軸:從 -3~+3(共7個整數)均勻隨機抽一個變動量(每個值機率相同,約1/7),
+// 套用到裝備「全部現有屬性」(整數類屬性直接加該值,百分比類屬性當作百分點/100換算)。
+// 回傳 { success, delta, item, deltas, usesLeft }。success 代表這次「整體是不是變強了」
+// (delta > 0 才算成功;delta = 0 代表這次沒有任何效果,delta < 0 代表變弱了)。
 export function rollEnhance(item) {
   const uses = item.enhanceUses || 0;
   if (uses >= ENHANCE_MAX_USES) return { success: false, item, maxed: true, usesLeft: 0 };
 
-  const positive = Math.random() < 0.5;
-  const sign = positive ? 1 : -1;
+  // -3 ~ +3 共 7 個整數,Math.floor(Math.random()*7) 落在 0~6,減 3 平移成 -3~+3,每個值機率均等(各1/7)
+  const delta = Math.floor(Math.random() * (ENHANCE_DELTA_MAX * 2 + 1)) - ENHANCE_DELTA_MAX;
   item.stats = item.stats || {};
   const deltas = {};
   Object.keys(item.stats).forEach((key) => {
     const isPct = key.toLowerCase().includes('pct');
-    const delta = isPct ? sign * (ENHANCE_DELTA / 100) : sign * ENHANCE_DELTA;
+    const appliedDelta = isPct ? delta / 100 : delta;
     // 下限保護:避免多次負向強化把數值弄到深度負值造成後續戰鬥公式異常(如負攻擊力算出負傷害),
     // 百分比類最低壓在 0,整數類最低壓在 1——「很爛」但不會整個壞掉,呼應「這是賭注不是懲罰到報廢」。
     const floor = isPct ? 0 : 1;
-    const newValue = Math.max(floor, item.stats[key] + delta);
+    const newValue = Math.max(floor, item.stats[key] + appliedDelta);
     deltas[key] = Math.round((newValue - item.stats[key]) * 1000) / 1000;
     item.stats[key] = Math.round(newValue * 1000) / 1000;
   });
   item.enhanceUses = uses + 1;
   // enhanceLevel 保留作為「目前淨強化點數」的顯示用途(可能是負數,例如 -6),UI 上顯示 +N 或 -N
-  item.enhanceLevel = (item.enhanceLevel || 0) + sign * ENHANCE_DELTA;
-  return { success: positive, item, deltas, usesLeft: ENHANCE_MAX_USES - item.enhanceUses };
+  item.enhanceLevel = (item.enhanceLevel || 0) + delta;
+  return { success: delta > 0, delta, item, deltas, usesLeft: ENHANCE_MAX_USES - item.enhanceUses };
 }
 
 export function getEnhanceSuccessRate() {
