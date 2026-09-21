@@ -7,12 +7,18 @@ import { WEAPON_TYPE_BY_CLASS, OFFHAND_TYPE_BY_CLASS } from './itemData.js';
 
 // 各地圖套裝的基礎強度(隨地圖序位 0~4 遞增,呼應菁英/真王本身強度遞增)
 // offhandCritDamage 是盜賊副手專屬的會心傷害%基礎值(其餘職業副手不使用這個欄位)。
+// accCrit(2026/09修正,實測抓到的漏洞):原本[8,12,16,20,24]乘上TRUEBOSS_MULT(1.4)後,
+// 光是「飾品」這一件裝備本身的固定會心率就高達11.2~33.6個百分點——而且這是「單一物品的固定
+// 屬性」,不像套裝加成需要湊滿件數才解鎖,任何build只要弄到手這1件飾品(不用湊滿整套)就能
+// 直接套用,難度/報酬完全不對等(飾品用料還是4件裡最便宜的,只要3個真王結晶)。實測:
+// novice_plains基本裝隨便換上ruined_borderlands真王套的飾品1件,會心率直接從31.5%暴衝到
+// 62.1%,幾乎全部來自這一件飾品的固定會心率。腰斬數值後,同樣情境下的會心率漲幅大幅收斂。
 const MAP_GEAR_BASE = [
-  { weaponAtk: 60, armorDef: 42, armorHp: 140, offhandHp: 65, offhandDef: 20, offhandAtk: 18, offhandCritDamage: 45, accHp: 85, accCrit: 8 },
-  { weaponAtk: 90, armorDef: 62, armorHp: 210, offhandHp: 95, offhandDef: 29, offhandAtk: 27, offhandCritDamage: 60, accHp: 125, accCrit: 12 },
-  { weaponAtk: 118, armorDef: 82, armorHp: 280, offhandHp: 130, offhandDef: 39, offhandAtk: 35, offhandCritDamage: 75, accHp: 170, accCrit: 16 },
-  { weaponAtk: 148, armorDef: 103, armorHp: 355, offhandHp: 162, offhandDef: 49, offhandAtk: 44, offhandCritDamage: 90, accHp: 215, accCrit: 20 },
-  { weaponAtk: 180, armorDef: 126, armorHp: 435, offhandHp: 200, offhandDef: 60, offhandAtk: 54, offhandCritDamage: 105, accHp: 265, accCrit: 24 },
+  { weaponAtk: 60, armorDef: 42, armorHp: 140, offhandHp: 65, offhandDef: 20, offhandAtk: 18, offhandCritDamage: 45, accHp: 85, accCrit: 4 },
+  { weaponAtk: 90, armorDef: 62, armorHp: 210, offhandHp: 95, offhandDef: 29, offhandAtk: 27, offhandCritDamage: 60, accHp: 125, accCrit: 6 },
+  { weaponAtk: 118, armorDef: 82, armorHp: 280, offhandHp: 130, offhandDef: 39, offhandAtk: 35, offhandCritDamage: 75, accHp: 170, accCrit: 8 },
+  { weaponAtk: 148, armorDef: 103, armorHp: 355, offhandHp: 162, offhandDef: 49, offhandAtk: 44, offhandCritDamage: 90, accHp: 215, accCrit: 10 },
+  { weaponAtk: 180, armorDef: 126, armorHp: 435, offhandHp: 200, offhandDef: 60, offhandAtk: 54, offhandCritDamage: 105, accHp: 265, accCrit: 12 },
 ];
 
 // 真王套裝比菁英套裝再強一截(呼應真王「至少兩張地圖強度」的定位)
@@ -34,30 +40,35 @@ export const CLASS_SPECIAL_STAT_LABEL = { warrior: '格擋率', rogue: '會心�
 // 1) atkPowerPct(攻擊力%,依職業套用atk或matk) 2) classSpecialPct(職業特色屬性,單位為百分點)
 // 3) allRawStatsPct(str/dex/int/luk全部一起+N%) 4) allStatsExceptSpecialPct(除職業特色外的全部現有屬性+N%)
 //
-// 數值曲線(2026/09修正):原本 base 只用「6+mapIndex*2」「10+mapIndex*2.5」這種平緩線性遞增,
-// map1(最容易取得)跟map5(最終endgame)的百分比只差 2~2.3 倍——但這些是「乘算在玩家當下完整
-// 屬性上」的效果,玩家等級/配點跟穿哪張地圖的套裝完全無關,結果無論穿哪張地圖的真王套,
-// 4件加成複合起來都是「玩家自身數值 * 一個接近的大倍率」,導致地圖一的真王套(最好取得)幾乎
-// 跟地圖五真王套一樣強,能直接打穿全部地圖的王——這正是使用者實測回報的「克難只有一開始」。
-// 修正改用明確的每地圖數值(不再用平滑公式):map1 大幅壓低到接近「聊勝於無」的程度,
-// 終點(map5)維持接近原本的強度,拉開約 8~10 倍差距,確保「打贏最終真王」才真正等於
-// 「大幅超越前面地圖」,而不是隨便一張地圖的套裝就能吃遍全部關卡(用 sim.mjs 實際模擬驗證過)。
+// 數值曲線(2026/09第二次修正,實測抓到的漏洞):第一次修正把 base 數值依地圖大幅拉開差距
+// (map1遠低於map5),但沒注意到「tier1(只需穿1件)就直接拿到滿額 base 值」這個結構性問題——
+// 玩家根本不需要湊齊某張地圖套裝的全部件數,隨便從「最強地圖」的套裝裡挑1件最好穿的
+// (通常是飾品,職業/部位限制最少),配上便宜地圖的裝備湊滿其他部位,就能直接拿到該地圖
+// 套裝的「滿額」atkPowerPct——完全繞過「要湊滿4件才是頂級裝備」的設計初衷,混搭比穿好穿滿
+// 同一套更划算。實測:novice_plains基本裝隨便換上ruined_borderlands真王套的飾品1件,
+// 會心率就從31.5%暴衝到62.1%、攻擊力282→344,足以打穿全部地圖真王。
+// 修正:改用「穿的件數越多、解鎖的比例越高」的漸進曲線(TIER_FRACTION_BY_COUNT),
+// tier1(1件)只解鎖該地圖套裝「滿額值」的一小部分,要真正湊滿4件(trueboss)/2件(elite)
+// 才能拿到當初設計的滿額值——這樣「混搭1件」的收益大幅降低,「認真湊滿一整套」才是
+// 真正划算的選擇,兩者不能一樣強。
 const ELITE_TIER_BASE = [2, 4, 6, 9, 12];
 const TRUEBOSS_TIER_BASE = [2, 6, 11, 16, 22];
+const ELITE_TIER_FRACTION_BY_COUNT = { 1: 0.4, 2: 1.0 }; // 穿1/2件分別解鎖40%/100%的該地圖基準值
+const TRUEBOSS_TIER_FRACTION_BY_COUNT = { 1: 0.15, 2: 0.35, 3: 0.65, 4: 1.0 }; // 穿1~4件分別解鎖15%/35%/65%/100%
 function eliteTiers(mapIndex) {
   const base = ELITE_TIER_BASE[mapIndex];
   return [
-    { count: 1, key: 'atkPowerPct', value: base },
-    { count: 2, key: 'classSpecialPct', value: Math.round(base * 0.6) },
+    { count: 1, key: 'atkPowerPct', value: Math.round(base * ELITE_TIER_FRACTION_BY_COUNT[1]) },
+    { count: 2, key: 'classSpecialPct', value: Math.round(base * 0.6 * ELITE_TIER_FRACTION_BY_COUNT[2]) },
   ];
 }
 function trueBossTiers(mapIndex) {
   const base = TRUEBOSS_TIER_BASE[mapIndex];
   return [
-    { count: 1, key: 'atkPowerPct', value: Math.round(base) },
-    { count: 2, key: 'classSpecialPct', value: Math.round(base * 0.7) },
-    { count: 3, key: 'allRawStatsPct', value: Math.round(base * 0.8) },
-    { count: 4, key: 'allStatsExceptSpecialPct', value: Math.round(base) },
+    { count: 1, key: 'atkPowerPct', value: Math.round(base * TRUEBOSS_TIER_FRACTION_BY_COUNT[1]) },
+    { count: 2, key: 'classSpecialPct', value: Math.round(base * 0.7 * TRUEBOSS_TIER_FRACTION_BY_COUNT[2]) },
+    { count: 3, key: 'allRawStatsPct', value: Math.round(base * 0.8 * TRUEBOSS_TIER_FRACTION_BY_COUNT[3]) },
+    { count: 4, key: 'allStatsExceptSpecialPct', value: Math.round(base * TRUEBOSS_TIER_FRACTION_BY_COUNT[4]) },
   ];
 }
 
