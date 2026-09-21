@@ -107,11 +107,20 @@ export const ACCESSORY_NAMES = ['護符', '戒指', '項鍊', '徽章'];
 const GEAR_MATERIAL_QTY_BY_MAP = { novice_plains: 5, goblin_forest: 8, stone_mines: 12, dark_swamp: 16, ruined_borderlands: 20 };
 const GEAR_GOLD_BY_MAP = { novice_plains: 30, goblin_forest: 90, stone_mines: 200, dark_swamp: 380, ruined_borderlands: 650 };
 const TIER_STATS = {
-  novice_plains: { weaponAtk: 28, armorDef: 20, armorHp: 65, accCritPct: 3, accHp: 38, accDex: 17 },
-  goblin_forest: { weaponAtk: 45, armorDef: 32, armorHp: 104, accCritPct: 4.8, accHp: 61, accDex: 27 },
-  stone_mines: { weaponAtk: 67, armorDef: 48, armorHp: 156, accCritPct: 7.2, accHp: 91, accDex: 41 },
-  dark_swamp: { weaponAtk: 95, armorDef: 68, armorHp: 221, accCritPct: 10.2, accHp: 129, accDex: 58 },
-  ruined_borderlands: { weaponAtk: 129, armorDef: 92, armorHp: 299, accCritPct: 13.8, accHp: 175, accDex: 78 },
+  // accDex(2026/09重新計算,非拍腦袋):DEX是「原始屬性」,會被職業係數放大再進入攻擊力公式
+  // (弓箭手 atk=dex*1.4+str*0.2,DEX對弓箭手是1:1.4的直接攻擊力轉換),但accCritPct是直接的
+  // 戰鬥屬性,不會再被任何係數放大。這代表同一個數字的accDex,對弓箭手而言的「期望傷害增幅」
+  // 遠高於accCritPct——用實際公式算過:原本 ruined_borderlands 的 accDex=78,對Lv30全點敏捷
+  // 弓箭手的期望傷害增幅高達 +35%,但同地圖 accCritPct=13.8 只增幅 +8.3%,兩者本應是「同一階
+  // 飾品的兩種選擇」卻差了4倍以上——這正是使用者實測「菁英2件+最後地圖2件一般飾品」就能打穿
+  // 最終真王的根本原因。修正:用「期望傷害增幅 = accDex*1.4*coeff / (等級基礎值+基準atk*coeff)」
+  // 反推每張地圖的 accDex,讓它對Lv30全點敏捷弓箭手的期望傷害增幅打平accCritPct(約8%),兩個
+  // 選項才是真正對等的取捨,不是「選錯了等於白選」。accCritPct本身數值合理,維持不變。
+  novice_plains: { weaponAtk: 28, armorDef: 20, armorHp: 65, accCritPct: 3, accHp: 38, accDex: 4 },
+  goblin_forest: { weaponAtk: 45, armorDef: 32, armorHp: 104, accCritPct: 4.8, accHp: 61, accDex: 6 },
+  stone_mines: { weaponAtk: 67, armorDef: 48, armorHp: 156, accCritPct: 7.2, accHp: 91, accDex: 10 },
+  dark_swamp: { weaponAtk: 95, armorDef: 68, armorHp: 221, accCritPct: 10.2, accHp: 129, accDex: 14 },
+  ruined_borderlands: { weaponAtk: 129, armorDef: 92, armorHp: 299, accCritPct: 13.8, accHp: 175, accDex: 18 },
 };
 // 副手五階數值:生存向(氣血/防禦約為防具一半)+ 少量攻擊值(約武器三分之一)。
 // 職業特色屬性各自用途:blockPct(戰士格擋率)、evasionPct(弓箭手迴避率)、critDamagePct(盜賊
