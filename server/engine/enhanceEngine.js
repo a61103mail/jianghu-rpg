@@ -25,11 +25,15 @@ function slotCategory(slot) {
 
 // 對裝備套用一次強化卷軸:一般卷軸從 -3~+3(共7個整數)均勻隨機抽一個變動量(每個值機率相同,約1/7);
 // 王家卷軸(isRoyal=true)則是 -1~+5(同樣7個整數,但範圍整體偏正,期望值更高、下跌風險更小)。
-// 套用到裝備「全部現有屬性」。整數類屬性(atk/def/hp等)與百分比類屬性(帶Pct後綴,以「百分點」
-// 為單位存放,例如 critRatePct=2.8 代表 2.8%)一律直接套用同一個 delta,不需要額外除以100轉換——
-// item.stats 裡的 pct 欄位本來就是以百分點為單位儲存(呼應 characterEngine.js 彙總時才 /100 轉小數)。
+// 套用到裝備「全部現有屬性」——但整數類屬性(atk/def/hp等)與百分比類屬性(帶Pct後綴,以「百分點」
+// 為單位存放,例如 critRatePct=2.8 代表 2.8%)不能套用同一個raw delta:百分比類屬性的基礎值通常
+// 只有個位數到十幾(如新手平原副手blockPct僅3、critDamagePct僅15),同樣的±3~+5「百分點」在這種
+// 尺度下是巨大的相對漲幅(5次強化可能讓格擋率/會心傷害/迴避率暴衝十幾到二十幾個百分點),因此
+// 百分比類屬性額外乘上 PCT_STAT_SCALE 縮小增量,才不會讓強化變成「刷爆某個百分比類屬性」的捷徑
+// (呼應會心率上限89%——如果強化本身就能把會心率洗到動輒+20%以上,那道上限只是形式而已)。
 // 回傳 { success, delta, item, deltas, usesLeft }。success 代表這次「整體是不是變強了」
 // (delta > 0 才算成功;delta = 0 代表這次沒有任何效果,delta < 0 代表變弱了)。
+const PCT_STAT_SCALE = 0.2; // 百分比類屬性實際套用的增量 = 骰出的delta * 0.2(等同把±3~+5的尺度壓縮到±0.6~+1)
 export function rollEnhance(item, isRoyal = false) {
   const uses = item.enhanceUses || 0;
   if (uses >= ENHANCE_MAX_USES) return { success: false, item, maxed: true, usesLeft: 0 };
@@ -43,15 +47,18 @@ export function rollEnhance(item, isRoyal = false) {
   const deltas = {};
   Object.keys(item.stats).forEach((key) => {
     const isPct = key.toLowerCase().includes('pct');
+    const appliedDelta = isPct ? Math.round(delta * PCT_STAT_SCALE * 1000) / 1000 : delta;
     // 下限保護:避免多次負向強化把數值弄到深度負值造成後續戰鬥公式異常(如負攻擊力算出負傷害),
     // 百分比類最低壓在 0,整數類最低壓在 1——「很爛」但不會整個壞掉,呼應「這是賭注不是懲罰到報廢」。
     const floor = isPct ? 0 : 1;
-    const newValue = Math.max(floor, item.stats[key] + delta);
+    const newValue = Math.max(floor, item.stats[key] + appliedDelta);
     deltas[key] = Math.round((newValue - item.stats[key]) * 1000) / 1000;
     item.stats[key] = Math.round(newValue * 1000) / 1000;
   });
   item.enhanceUses = uses + 1;
-  // enhanceLevel 保留作為「目前淨強化點數」的顯示用途(可能是負數,例如 -6),UI 上顯示 +N 或 -N
+  // enhanceLevel 保留作為「目前淨強化點數」的顯示用途(可能是負數,例如 -6),UI 上顯示 +N 或 -N——
+  // 這裡記錄的是「骰出的原始delta」而非套用到百分比屬性後的縮放值,單純代表這件裝備強化路上的
+  // 運氣好壞,不代表任何單一屬性的實際漲幅(實際漲幅請看 deltas)。
   item.enhanceLevel = (item.enhanceLevel || 0) + delta;
   return { success: delta > 0, delta, item, deltas, usesLeft: ENHANCE_MAX_USES - item.enhanceUses };
 }

@@ -9,7 +9,7 @@ import { getItem, getShop, SHOP_ORDER, getRareRecipes, getPotion, POTION_ORDER, 
 import { rollMapEvent } from '../data/eventData.js';
 import { computeStats, addLog, checkLevelUp, computeHpRegen, computeMpRegen, getEquippedSetProgress } from '../engine/characterEngine.js';
 import { rollDamage, narrateAttack, narrateEnemyAttack, levelGapDescription, sumBuffValue, tickBuffs, consumeWeaponDurability, consumeArmorDurability } from '../engine/combatEngine.js';
-import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand, craftSetItem } from '../engine/itemEngine.js';
+import { generateCommonGear, craftRareItem, canEquip, createStarterMageOffhand, craftSetItem, MAX_DURABILITY } from '../engine/itemEngine.js';
 import { getSetInfo, getSetRecipesForShop, getSetRecipeById, describeSetTiers } from '../data/setGearData.js';
 import { sellItemToMarket, buyPotionFromMarket, getPotionPriceInfo, getMarketSnapshot, buyEnhanceItemFromMarket } from '../engine/marketEngine.js';
 import { listItem, getListings, getListingById, removeListing, LISTING_FEE_PCT } from '../engine/auctionEngine.js';
@@ -62,6 +62,28 @@ async function loadSave(userId) {
   if (!save.allocatedStats) save.allocatedStats = { str: 0, dex: 0, int: 0, luk: 0 };
   if (save.statPoints === undefined) save.statPoints = 0;
   if (!save.currentMapId) save.currentMapId = 'novice_plains';
+  // 舊制材料全面退場(裝備地圖化重構後已無任何配方使用,見 itemData.js 開頭說明的「已停用/legacy」
+  // 標記):不留著讓玩家背包裡卡著「不知道要幹嘛、只能賣掉」的舊材料,改為在下次讀取存檔時自動
+  // 依 basePrice 兌換成金幣——執行過一次後 save.materials 就不會再有這些 id,之後每次讀取都是
+  // no-op,不需要額外的「是否已migrate過」旗標。
+  const LEGACY_MATERIAL_IDS = [
+    'iron_ore', 'rough_leather', 'feather', 'crystal_shard', 'holy_water',
+    'slime_core', 'boar_fang', 'captain_insignia', 'chieftain_totem', 'spider_silk_gland',
+    'golem_core', 'witch_charm', 'drake_scale', 'knight_emblem', 'king_crown_shard',
+    'party_seal',
+  ];
+  let liquidatedGold = 0;
+  LEGACY_MATERIAL_IDS.forEach((id) => {
+    const count = save.materials[id] || 0;
+    if (count > 0) {
+      liquidatedGold += count * (getItem(id)?.basePrice || 0);
+      delete save.materials[id];
+    }
+  });
+  if (liquidatedGold > 0) {
+    save.gold += liquidatedGold;
+    addLog(save, `背包內已無用途的舊制材料,自動兌換為 ${liquidatedGold} 金幣。`);
+  }
   // 舊存檔的 equipment 物件是在新增副手部位之前建立的,根本沒有 offhand 這個鍵——
   // 不補上的話 Object.entries(save.equipment) 不會列出它,前端裝備欄畫面就看不到「副手」這一格。
   GEAR_SLOTS.forEach((slot) => { if (!(slot in save.equipment)) save.equipment[slot] = null; });
@@ -79,6 +101,19 @@ async function loadSave(userId) {
   };
   GEAR_SLOTS.forEach((slot) => backfillEnhanceFields(save.equipment[slot]));
   (save.inventory || []).forEach(backfillEnhanceFields);
+
+  // 裝備耐久度上限調降(500→250,見 itemEngine.js MAX_DURABILITY):舊存檔已持有的裝備仍是舊制
+  // 500上限,不能直接把 maxDurability 蓋成新制 250——那樣要嘛讓耗損到一半的武器瞬間「回春」變成
+  // 幾乎全新,要嘛讓已經用超過250次的裝備直接卡在0耐久。這裡改用「等比例縮放」:依照舊存檔目前
+  // 的耗損比例,換算到新的250上限,耐久損耗的「感覺」不會因為改制而突然跳動。
+  const rescaleDurability = (item) => {
+    if (!item || item.maxDurability == null || item.maxDurability === MAX_DURABILITY) return;
+    const ratio = item.durability / item.maxDurability;
+    item.maxDurability = MAX_DURABILITY;
+    item.durability = Math.max(0, Math.min(MAX_DURABILITY, Math.round(ratio * MAX_DURABILITY)));
+  };
+  GEAR_SLOTS.forEach((slot) => rescaleDurability(save.equipment[slot]));
+  (save.inventory || []).forEach(rescaleDurability);
 
   // 裝備耐久度歸零:自動從裝備欄卸下(不能穿戴/戰鬥中不再生效),移進背包讓玩家自己決定要不要去
   // 雜貨店賣掉騰位置——不是留在裝備欄「看起來還穿著但沒作用」,那樣容易讓玩家誤以為是bug。

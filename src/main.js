@@ -828,8 +828,8 @@ function renderEnhanceModal() {
   const enhanceButton = (targetScrollId, targetScroll, isRoyal) => h('button', {
     class: isRoyal ? 'btn primary' : 'btn',
     title: isRoyal
-      ? `消耗1張${targetScroll?.name || ''}。每次從 -1~+5 之間隨機抽一個數值套用到裝備「全部現有屬性」——範圍比一般卷軸更好,期望值更高、最壞情況跌幅也更小(只有真王會掉,商店買不到)。`
-      : `消耗1張${targetScroll?.name || ''}。每次從 -3~+3 之間隨機抽一個數值(機率平均,7種結果各約1/7)套用到裝備「全部現有屬性」——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差,也可能剛好抽到0完全沒變化。`,
+      ? `消耗1張${targetScroll?.name || ''}。每次從 -1~+5 之間隨機抽一個數值套用到裝備「全部現有屬性」(百分比類屬性如會心率/格擋率等增量會再縮小為原本的1/5,避免暴衝)——範圍比一般卷軸更好,期望值更高、最壞情況跌幅也更小(只有真王會掉,商店買不到)。`
+      : `消耗1張${targetScroll?.name || ''}。每次從 -3~+3 之間隨機抽一個數值(機率平均,7種結果各約1/7)套用到裝備「全部現有屬性」(百分比類屬性如會心率/格擋率等增量會再縮小為原本的1/5,避免暴衝)——這是賭注,不是穩定進步,運氣差可能讓裝備變得比原本更差,也可能剛好抽到0完全沒變化。`,
     onclick: async () => {
       try {
         const r = await api.enhanceItem(item.id, targetScrollId);

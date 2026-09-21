@@ -313,7 +313,7 @@ export const MAPS = {
     monsterPool: ['slime', 'wild_boar'],
     miniBoss: 'slime_king',
     boss: 'boar_lord',
-    trueBoss: 'ancient_treant_king', trueBossRespawnMin: 30,
+    trueBoss: 'ancient_treant_king', trueBossRespawnMin: 3,
     maxEnemiesPerFight: 2,
   },
   goblin_forest: {
@@ -321,7 +321,7 @@ export const MAPS = {
     monsterPool: ['goblin', 'goblin_archer'],
     miniBoss: 'goblin_captain',
     boss: 'goblin_chieftain',
-    trueBoss: 'goblin_emperor', trueBossRespawnMin: 30,
+    trueBoss: 'goblin_emperor', trueBossRespawnMin: 3,
     maxEnemiesPerFight: 2,
   },
   stone_mines: {
@@ -329,7 +329,7 @@ export const MAPS = {
     monsterPool: ['stone_bat', 'mine_rat'],
     miniBoss: 'mine_spider_queen',
     boss: 'stone_golem',
-    trueBoss: 'abyssal_stone_dragon', trueBossRespawnMin: 30,
+    trueBoss: 'abyssal_stone_dragon', trueBossRespawnMin: 3,
     maxEnemiesPerFight: 3,
   },
   dark_swamp: {
@@ -337,7 +337,7 @@ export const MAPS = {
     monsterPool: ['swamp_tentacle', 'toxic_toad'],
     miniBoss: 'swamp_witch',
     boss: 'swamp_drake',
-    trueBoss: 'ancient_swamp_deity', trueBossRespawnMin: 30,
+    trueBoss: 'ancient_swamp_deity', trueBossRespawnMin: 3,
     maxEnemiesPerFight: 3,
   },
   ruined_borderlands: {
@@ -345,7 +345,7 @@ export const MAPS = {
     monsterPool: ['ruin_guardian', 'shadow_blade'],
     miniBoss: 'fallen_knight',
     boss: 'king_of_ruins',
-    trueBoss: 'primordial_ruin_overlord', trueBossRespawnMin: 30,
+    trueBoss: 'primordial_ruin_overlord', trueBossRespawnMin: 3,
     maxEnemiesPerFight: 3,
   },
 };

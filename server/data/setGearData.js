@@ -33,15 +33,26 @@ export const CLASS_SPECIAL_STAT_LABEL = { warrior: '格擋率', rogue: '會心�
 // 套裝效果 tiers:每多穿一件解鎖一條,數值隨地圖序位遞增。
 // 1) atkPowerPct(攻擊力%,依職業套用atk或matk) 2) classSpecialPct(職業特色屬性,單位為百分點)
 // 3) allRawStatsPct(str/dex/int/luk全部一起+N%) 4) allStatsExceptSpecialPct(除職業特色外的全部現有屬性+N%)
+//
+// 數值曲線(2026/09修正):原本 base 只用「6+mapIndex*2」「10+mapIndex*2.5」這種平緩線性遞增,
+// map1(最容易取得)跟map5(最終endgame)的百分比只差 2~2.3 倍——但這些是「乘算在玩家當下完整
+// 屬性上」的效果,玩家等級/配點跟穿哪張地圖的套裝完全無關,結果無論穿哪張地圖的真王套,
+// 4件加成複合起來都是「玩家自身數值 * 一個接近的大倍率」,導致地圖一的真王套(最好取得)幾乎
+// 跟地圖五真王套一樣強,能直接打穿全部地圖的王——這正是使用者實測回報的「克難只有一開始」。
+// 修正改用明確的每地圖數值(不再用平滑公式):map1 大幅壓低到接近「聊勝於無」的程度,
+// 終點(map5)維持接近原本的強度,拉開約 8~10 倍差距,確保「打贏最終真王」才真正等於
+// 「大幅超越前面地圖」,而不是隨便一張地圖的套裝就能吃遍全部關卡(用 sim.mjs 實際模擬驗證過)。
+const ELITE_TIER_BASE = [2, 4, 6, 9, 12];
+const TRUEBOSS_TIER_BASE = [2, 6, 11, 16, 22];
 function eliteTiers(mapIndex) {
-  const base = 6 + mapIndex * 2; // 6/8/10/12/14 (%)
+  const base = ELITE_TIER_BASE[mapIndex];
   return [
     { count: 1, key: 'atkPowerPct', value: base },
     { count: 2, key: 'classSpecialPct', value: Math.round(base * 0.6) },
   ];
 }
 function trueBossTiers(mapIndex) {
-  const base = 10 + mapIndex * 2.5; // 10/12.5/15/17.5/20 (%)
+  const base = TRUEBOSS_TIER_BASE[mapIndex];
   return [
     { count: 1, key: 'atkPowerPct', value: Math.round(base) },
     { count: 2, key: 'classSpecialPct', value: Math.round(base * 0.7) },

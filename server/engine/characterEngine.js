@@ -7,6 +7,11 @@ import { getSetInfo, CLASS_SPECIAL_STAT_KEY, describeSetTiers } from '../data/se
 
 export const HP_REGEN_PCT_PER_MINUTE = 0.04; // 氣血自然恢復:每分鐘回復上限的 4%(離線也會累積),城鎮/藥水才是主要恢復手段
 export const MP_REGEN_PCT_PER_MINUTE = 0.06; // 真力自然恢復略快於氣血
+// 會心率上限:LUK/DEX配點 + 裝備critRatePct + 潛能 + 套裝加成 + 光環被動疊加起來理論上可以無限疊加,
+// 沒有這道上限的話,堆到100%以上只是純粹浪費(超過100%的部分完全沒有實際效果,任何一擊必定觸發
+// 會心早就已經到頂了),玩家卻感覺不出來「這樣點/洗到底有沒有用」。訂在89%(而非100%)保留一點點
+// 「非會心」的機率下限,不讓任何build完全抹除傷害的隨機性。
+export const CRIT_RATE_CAP = 0.89;
 
 export function createDefaultSave(classId = 'warrior') {
   const cls = getClass(classId);
@@ -52,8 +57,8 @@ export function computeMpRegen(lastRegenAt, currentMp, maxMp) {
 }
 
 // 依職業基礎值 + 玩家配點 + 等級 + 裝備,計算角色目前完整戰鬥屬性
-// 裝備耐久度歸零(0/500)視同「損壞、暫時卸下」——不提供任何數值加成,但保留在裝備欄位上讓玩家
-// 看得到(需要玩家自己去雜貨店賣掉騰出空位或修理,見 game.js 的耐久相關邏輯)。
+// 裝備耐久度歸零(0/上限,見 itemEngine.js MAX_DURABILITY)視同「損壞、暫時卸下」——不提供任何
+// 數值加成,但保留在裝備欄位上讓玩家看得到(需要玩家自己去雜貨店賣掉騰出空位,見 game.js 的耐久相關邏輯)。
 function isItemUsable(item) {
   if (!item) return false;
   if (item.maxDurability == null) return true; // 飾品沒有耐久度上限,永遠有效
@@ -237,6 +242,10 @@ export function computeStats(save) {
     critRate *= mult;
     critDamageMult *= mult;
   }
+
+  // 會心率最終上限(見上方 CRIT_RATE_CAP 說明):不論配點/裝備/潛能/套裝疊加到多高,一律鎖在89%,
+  // 超過的部分是純粹溢出、沒有任何實際效果。
+  critRate = Math.min(CRIT_RATE_CAP, critRate);
 
   return {
     str: Math.round(str), dex: Math.round(dex), int: Math.round(int_), luk: Math.round(luk),

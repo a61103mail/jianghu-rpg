@@ -93,10 +93,13 @@ function commonAccessoryStat(level) {
   return { stats: { dex: r.value }, quality: r.quality };
 }
 
-// 裝備耐久度:武器/防具上限固定 500,飾品不受耐久限制(不會壞、可以一直戴著)。
-// 目的是抑制裝備無限累積、交易所被舊裝備灌爆——裝備會隨著實際戰鬥使用逐漸耗損,
-// 耐久歸零後無法再穿戴/使用,只能賣給雜貨店回收(不能上架交易所賣給其他玩家一個報廢品)。
-export const MAX_DURABILITY = 500;
+// 裝備耐久度:武器/防具上限固定 250(2026/09 調降,原本 500 太耐用,幾乎打不壞、感受不到耐久度
+// 這個機制的存在),飾品不受耐久限制(不會壞、可以一直戴著)。目的是抑制裝備無限累積、交易所被
+// 舊裝備灌爆——裝備會隨著實際戰鬥使用逐漸耗損,耐久歸零後無法再穿戴/使用,只能賣給雜貨店回收
+// (不能上架交易所賣給其他玩家一個報廢品)。
+// 舊存檔已持有的裝備(maxDurability還是舊值500)由 game.js 的 loadSave 按比例換算到新上限,
+// 不會讓玩家已經耗損的裝備突然變得比原本「更耐用」或直接爆炸性耗損。
+export const MAX_DURABILITY = 250;
 function durabilityFieldsFor(slot) {
   if (slot === 'accessory' || slot === 'accessory1' || slot === 'accessory2') return { durability: null, maxDurability: null };
   return { durability: MAX_DURABILITY, maxDurability: MAX_DURABILITY };
