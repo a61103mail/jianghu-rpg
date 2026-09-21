@@ -51,24 +51,43 @@ function trueBossCrystalDrop(mapId) {
 // - chargeSkill:每隔數回合蓄力一次,蓄力當回合不攻擊、明確預警,下回合爆發高倍傷害——
 //   讓玩家有「這回合該不該防禦」的即時判斷,而不是無腦攻擊到底。
 const ENRAGE_DEFAULT = { enrageHpPct: 0.3, enrageAtkMult: 1.35 };
+// 【血量/攻擊力/經驗全面調整,計算依據】原設計一般小怪血量嚴重偏低(玩家只要帶著上一張地圖的
+// 裝備,就能1~2下打死落後好幾張地圖的怪物,等同讓「循序漸進闖關」的設計形同虛設)。一般小怪與
+// 小王/大王/真王分開用「不同的參照角色」反推,不能套同一組倍率(實測過套同一倍率會導致前3張
+// 地圖的真王「即使穿好穿滿真王套裝也100%打不贏」——因為一般小怪的倍率是拿「剛抵達、零裝備」
+// 的脆弱新手反推,小王/大王/真王卻是給「已經穿好對應階級裝備」的角色挑戰,兩者防禦力/生存量級
+// 差太多,共用倍率會讓王的攻擊力相對於「有裝備的玩家防禦力」out-scale 過頭):
+// 1) 一般小怪:玩家強度基準=剛抵達該地圖(等級=下限)、完全沒有裝備、屬性全點主屬性——目標
+//    玩家平均~2.5下打死小怪、小怪平均~5下才能打死玩家。血量倍率同時套用到「該地圖全部怪物」
+//    (含小王/大王/真王的血量,但不含攻擊力),避免小怪血量修正後反而逼近王的血量。
+// 2) 小王/大王/真王的攻擊力與血量則分開反推,參照「玩家在該地圖等級上限、穿著對應難度裝備」:
+//    小王參照全套基本裝備(目標4下殺/承受8下死)、大王參照全套菁英套裝(目標7下殺/承受11下死)。
+//    真王的參照裝備刻意選「菁英套裝」而非「真王套裝」——真王結晶只有打贏真王才會掉,若拿穿好
+//    真王套裝的角色去反推,會變成「要先打贏真王才能取得打贏真王所需的裝備」的無解死鎖(真王
+//    遭遇是純粹單人隨機遭遇,見 game.js:206,沒有組隊分攤傷害這回事)。真王目標:菁英套裝角色
+//    要「有實際機會」打贏(前期地圖較硬、後期地圖較穩,呼應「越早期世界王的等級差距相對越大」
+//    這個結構性事實),等湊到全套真王套裝後,勝率會大幅提升,才是「越練越強」的正向循環。
+// 經驗值同步依「新血量/原血量」的比例調整——血量變高代表打死同一隻怪要花更多回合,若經驗值
+// 不變,等同「單位時間內經驗變少」,這是調整血量不應該附帶產生的隱藏懲罰,故一併等比例提升
+// 經驗值抵銷。
 export const MONSTERS = {
   // ---- 新手平原(Lv1~6) ----
   slime: {
-    id: 'slime', name: '史萊姆', level: 1, hp: 25, atk: 4, def: 1, critRate: 0.05, exp: 8,
+    id: 'slime', name: '史萊姆', level: 1, hp: 56, atk: 18, def: 1, critRate: 0.05, exp: 18,
     dropTable: [
       { id: 'slime_jelly', kind: 'junk', chance: 0.6, min: 1, max: 2 },
       { id: 'gear_material_novice_plains', kind: 'material', chance: 0.3, min: 1, max: 2 },
     ],
   },
   wild_boar: {
-    id: 'wild_boar', name: '野豬', level: 3, hp: 45, atk: 7, def: 3, critRate: 0.08, exp: 14,
+    id: 'wild_boar', name: '野豬', level: 3, hp: 101, atk: 32, def: 3, critRate: 0.08, exp: 32,
     dropTable: [
       { id: 'boar_hide', kind: 'junk', chance: 0.55, min: 1, max: 2 },
       { id: 'gear_material_novice_plains', kind: 'material', chance: 0.5, min: 1, max: 2 },
     ],
   },
   slime_king: {
-    id: 'slime_king', name: '史萊姆王', level: 6, hp: 260, atk: 12, def: 5, critRate: 0.08, exp: 90, tier: 'miniboss',
+    id: 'slime_king', name: '史萊姆王', level: 6, hp: 437, atk: 42, def: 5, critRate: 0.08, exp: 151, tier: 'miniboss',
     physicalResistPct: -0.15, magicResistPct: 0.15, // 黏液之軀:físico容易砍中(弱)、魔法難以穿透(抗)
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '黏液噴濺', telegraphText: '的軀體開始劇烈鼓動,似乎在醞釀噴發!', triggerEveryTurns: 4, dmgMult: 2.2 },
@@ -79,7 +98,7 @@ export const MONSTERS = {
     ],
   },
   boar_lord: {
-    id: 'boar_lord', name: '巨牙野豬王', level: 8, hp: 480, atk: 18, def: 8, critRate: 0.1, exp: 220, tier: 'boss',
+    id: 'boar_lord', name: '巨牙野豬王', level: 8, hp: 998, atk: 39, def: 8, critRate: 0.1, exp: 457, tier: 'boss',
     physicalResistPct: 0.15, magicResistPct: -0.15, // 厚皮硬骨:扛得住物理、怕魔法
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '狂怒衝撞', telegraphText: '刨地怒吼,蓄勢待發準備衝鋒!', triggerEveryTurns: 4, dmgMult: 2.4 },
@@ -92,7 +111,7 @@ export const MONSTERS = {
   // 真王(每張地圖獨一無二的終極首領,強度抓在「兩張地圖之後」的量級):不是明確挑戰按鈕,
   // 一樣是隨機遭遇(機率遠低於菁英),全服共用重生計時(見 worldBossEngine.js),不是個人各自獨立進度。
   ancient_treant_king: {
-    id: 'ancient_treant_king', name: '上古樹靈王', level: 22, hp: 1750, atk: 38, def: 27, critRate: 0.14, exp: 1900, tier: 'trueboss',
+    id: 'ancient_treant_king', name: '上古樹靈王', level: 22, hp: 1724, atk: 1, def: 27, critRate: 0.14, exp: 1872, tier: 'trueboss',
     physicalResistPct: 0.2, magicResistPct: -0.15, // 巨木軀體:硬扛物理,怕火系/魔法燃燒
     enrageHpPct: 0.3, enrageAtkMult: 1.5,
     chargeSkill: { name: '巨木衝撞', telegraphText: '龐大的身軀開始積蓄力量,樹根深深沒入大地!', triggerEveryTurns: 3, dmgMult: 2.8 },
@@ -105,21 +124,21 @@ export const MONSTERS = {
 
   // ---- 哥布林森林(Lv5~12) ----
   goblin: {
-    id: 'goblin', name: '哥布林', level: 6, hp: 60, atk: 9, def: 4, critRate: 0.08, exp: 20,
+    id: 'goblin', name: '哥布林', level: 6, hp: 215, atk: 26, def: 4, critRate: 0.08, exp: 72,
     dropTable: [
       { id: 'goblin_ear', kind: 'junk', chance: 0.6, min: 1, max: 2 },
       { id: 'gear_material_goblin_forest', kind: 'material', chance: 0.2, min: 1, max: 2 },
     ],
   },
   goblin_archer: {
-    id: 'goblin_archer', name: '哥布林弓兵', level: 8, hp: 55, atk: 12, def: 3, critRate: 0.15, exp: 26,
+    id: 'goblin_archer', name: '哥布林弓兵', level: 8, hp: 197, atk: 35, def: 3, critRate: 0.15, exp: 93,
     dropTable: [
       { id: 'goblin_bow_string', kind: 'junk', chance: 0.5, min: 1, max: 2 },
       { id: 'gear_material_goblin_forest', kind: 'material', chance: 0.25, min: 1, max: 2 },
     ],
   },
   goblin_captain: {
-    id: 'goblin_captain', name: '哥布林隊長', level: 12, hp: 520, atk: 13, def: 10, critRate: 0.12, exp: 260, tier: 'miniboss',
+    id: 'goblin_captain', name: '哥布林隊長', level: 12, hp: 785, atk: 60, def: 10, critRate: 0.12, exp: 393, tier: 'miniboss',
     physicalResistPct: 0.1, magicResistPct: -0.1, // 披甲士兵:略抗物理、略怕魔法
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '蓄力重斬', telegraphText: '將兵器高高舉起,似乎要使出全力一擊!', triggerEveryTurns: 4, dmgMult: 2.3 },
@@ -130,7 +149,7 @@ export const MONSTERS = {
     ],
   },
   goblin_chieftain: {
-    id: 'goblin_chieftain', name: '哥布林酋長', level: 14, hp: 950, atk: 23, def: 14, critRate: 0.14, exp: 620, tier: 'boss',
+    id: 'goblin_chieftain', name: '哥布林酋長', level: 14, hp: 1726, atk: 55, def: 14, critRate: 0.14, exp: 1127, tier: 'boss',
     physicalResistPct: 0.15, magicResistPct: -0.15, // 重甲統帥:更抗物理、更怕魔法
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '酋長怒吼衝擊', telegraphText: '高舉戰斧仰天怒吼,殺氣逐漸凝聚!', triggerEveryTurns: 4, dmgMult: 2.5 },
@@ -141,7 +160,7 @@ export const MONSTERS = {
     ],
   },
   goblin_emperor: {
-    id: 'goblin_emperor', name: '哥布林大帝', level: 28, hp: 2500, atk: 53, def: 33, critRate: 0.18, exp: 3000, tier: 'trueboss',
+    id: 'goblin_emperor', name: '哥布林大帝', level: 28, hp: 3073, atk: 1, def: 33, critRate: 0.18, exp: 3687, tier: 'trueboss',
     physicalResistPct: 0.25, magicResistPct: -0.2, // 全軍統帥的重甲防護:更扛物理,魔法仍是弱點
     enrageHpPct: 0.3, enrageAtkMult: 1.55,
     chargeSkill: { name: '帝王審判斬', telegraphText: '高舉象徵至高權柄的巨斧,全軍為之震懾!', triggerEveryTurns: 3, dmgMult: 2.9 },
@@ -154,21 +173,21 @@ export const MONSTERS = {
 
   // ---- 石化礦坑(Lv10~18) ----
   stone_bat: {
-    id: 'stone_bat', name: '石化蝙蝠', level: 11, hp: 90, atk: 16, def: 6, critRate: 0.1, exp: 40,
+    id: 'stone_bat', name: '石化蝙蝠', level: 11, hp: 338, atk: 41, def: 6, critRate: 0.1, exp: 150,
     dropTable: [
       { id: 'bat_wing', kind: 'junk', chance: 0.55, min: 1, max: 2 },
       { id: 'gear_material_stone_mines', kind: 'material', chance: 0.2, min: 1, max: 2 },
     ],
   },
   mine_rat: {
-    id: 'mine_rat', name: '礦坑狂鼠', level: 13, hp: 110, atk: 18, def: 7, critRate: 0.1, exp: 48,
+    id: 'mine_rat', name: '礦坑狂鼠', level: 13, hp: 414, atk: 46, def: 7, critRate: 0.1, exp: 180,
     dropTable: [
       { id: 'rat_tail', kind: 'junk', chance: 0.55, min: 1, max: 2 },
       { id: 'gear_material_stone_mines', kind: 'material', chance: 0.25, min: 2, max: 3 },
     ],
   },
   mine_spider_queen: {
-    id: 'mine_spider_queen', name: '礦坑蜘蛛后', level: 18, hp: 830, atk: 16, def: 16, critRate: 0.15, exp: 520, tier: 'miniboss',
+    id: 'mine_spider_queen', name: '礦坑蜘蛛后', level: 18, hp: 1164, atk: 82, def: 16, critRate: 0.15, exp: 729, tier: 'miniboss',
     physicalResistPct: -0.15, magicResistPct: 0.15, // 節肢軀體怕物理、絲網體質抗魔法
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '蛛絲纏繞', telegraphText: '吐出大量蛛絲,似乎在準備一記致命纏繞!', triggerEveryTurns: 4, dmgMult: 2.3 },
@@ -179,7 +198,7 @@ export const MONSTERS = {
     ],
   },
   stone_golem: {
-    id: 'stone_golem', name: '石巨人', level: 20, hp: 1510, atk: 34, def: 24, critRate: 0.1, exp: 1350, tier: 'boss',
+    id: 'stone_golem', name: '石巨人', level: 20, hp: 2430, atk: 72, def: 24, critRate: 0.1, exp: 2172, tier: 'boss',
     physicalResistPct: 0.3, magicResistPct: -0.2, // 全身岩石:重扛物理,但法術能直接打入裂縫
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '碎石重擊', telegraphText: '緩緩舉起巨大的石拳,大地為之震動!', triggerEveryTurns: 4, dmgMult: 2.6 },
@@ -190,7 +209,7 @@ export const MONSTERS = {
     ],
   },
   abyssal_stone_dragon: {
-    id: 'abyssal_stone_dragon', name: '深淵岩龍', level: 32, hp: 3300, atk: 67, def: 44, critRate: 0.16, exp: 4400, tier: 'trueboss',
+    id: 'abyssal_stone_dragon', name: '深淵岩龍', level: 32, hp: 4373, atk: 10, def: 44, critRate: 0.16, exp: 5830, tier: 'trueboss',
     physicalResistPct: 0.35, magicResistPct: -0.25, // 岩石與龍軀雙重防護:極度扛物理,但深埋礦脈的裂縫仍怕魔法貫穿
     enrageHpPct: 0.3, enrageAtkMult: 1.6,
     chargeSkill: { name: '深淵崩裂吐息', telegraphText: '深邃的雙眼泛起幽光,礦坑深處傳來震耳欲聾的低鳴!', triggerEveryTurns: 3, dmgMult: 3.0 },
@@ -203,21 +222,21 @@ export const MONSTERS = {
 
   // ---- 幽暗沼澤(Lv16~24) ----
   swamp_tentacle: {
-    id: 'swamp_tentacle', name: '沼澤觸手', level: 17, hp: 160, atk: 28, def: 12, critRate: 0.1, exp: 95,
+    id: 'swamp_tentacle', name: '沼澤觸手', level: 17, hp: 536, atk: 57, def: 12, critRate: 0.1, exp: 318,
     dropTable: [
       { id: 'tentacle_ooze', kind: 'junk', chance: 0.55, min: 1, max: 2 },
       { id: 'gear_material_dark_swamp', kind: 'material', chance: 0.2, min: 1, max: 1 },
     ],
   },
   toxic_toad: {
-    id: 'toxic_toad', name: '毒沼蟾蜍', level: 19, hp: 180, atk: 32, def: 14, critRate: 0.1, exp: 110,
+    id: 'toxic_toad', name: '毒沼蟾蜍', level: 19, hp: 603, atk: 65, def: 14, critRate: 0.1, exp: 369,
     dropTable: [
       { id: 'toad_venom_sac', kind: 'junk', chance: 0.55, min: 1, max: 2 },
       { id: 'gear_material_dark_swamp', kind: 'material', chance: 0.25, min: 1, max: 2 },
     ],
   },
   swamp_witch: {
-    id: 'swamp_witch', name: '沼澤女巫', level: 24, hp: 1220, atk: 23, def: 22, critRate: 0.18, exp: 980, tier: 'miniboss',
+    id: 'swamp_witch', name: '沼澤女巫', level: 24, hp: 1583, atk: 111, def: 22, critRate: 0.18, exp: 1272, tier: 'miniboss',
     physicalResistPct: -0.15, magicResistPct: 0.25, // 施法者體質:近戰打得動,但自身法術屏障抗魔
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '詛咒凝聚', telegraphText: '喃喃念咒,周身黑氣逐漸凝聚成形!', triggerEveryTurns: 4, dmgMult: 2.4 },
@@ -228,7 +247,7 @@ export const MONSTERS = {
     ],
   },
   swamp_drake: {
-    id: 'swamp_drake', name: '遠古沼澤龍', level: 26, hp: 2210, atk: 48, def: 30, critRate: 0.15, exp: 2400, tier: 'boss',
+    id: 'swamp_drake', name: '遠古沼澤龍', level: 26, hp: 3248, atk: 93, def: 30, critRate: 0.15, exp: 3528, tier: 'boss',
     physicalResistPct: -0.1, magicResistPct: 0.2, // 古龍鱗片:天生抗魔,鱗片縫隙仍可被物理攻擊突破
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '沼氣吐息', telegraphText: '深吸一口氣,喉間泛起詭異的綠光!', triggerEveryTurns: 4, dmgMult: 2.6 },
@@ -239,7 +258,7 @@ export const MONSTERS = {
     ],
   },
   ancient_swamp_deity: {
-    id: 'ancient_swamp_deity', name: '太古沼澤邪神', level: 35, hp: 4200, atk: 78, def: 52, critRate: 0.2, exp: 5600, tier: 'trueboss',
+    id: 'ancient_swamp_deity', name: '太古沼澤邪神', level: 35, hp: 5875, atk: 39, def: 52, critRate: 0.2, exp: 7834, tier: 'trueboss',
     physicalResistPct: 0.15, magicResistPct: 0.15, // 邪神體質:對兩種傷害皆有相當抗性,不再有明顯弱點屬性
     enrageHpPct: 0.3, enrageAtkMult: 1.65,
     chargeSkill: { name: '混沌深淵吞噬', telegraphText: '沼澤深處泛起詭異漩渦,無數黑影自水面下浮現!', triggerEveryTurns: 3, dmgMult: 3.1 },
@@ -252,21 +271,21 @@ export const MONSTERS = {
 
   // ---- 遺跡邊境(Lv22~30) ----
   ruin_guardian: {
-    id: 'ruin_guardian', name: '遺跡守衛', level: 23, hp: 260, atk: 46, def: 20, critRate: 0.12, exp: 180,
+    id: 'ruin_guardian', name: '遺跡守衛', level: 23, hp: 796, atk: 75, def: 20, critRate: 0.12, exp: 551,
     dropTable: [
       { id: 'guardian_plating', kind: 'junk', chance: 0.55, min: 1, max: 2 },
       { id: 'gear_material_ruined_borderlands', kind: 'material', chance: 0.3, min: 2, max: 4 },
     ],
   },
   shadow_blade: {
-    id: 'shadow_blade', name: '暗影劍士', level: 25, hp: 240, atk: 52, def: 18, critRate: 0.2, exp: 210,
+    id: 'shadow_blade', name: '暗影劍士', level: 25, hp: 735, atk: 85, def: 18, critRate: 0.2, exp: 643,
     dropTable: [
       { id: 'shadow_fragment', kind: 'junk', chance: 0.55, min: 1, max: 2 },
       { id: 'gear_material_ruined_borderlands', kind: 'material', chance: 0.3, min: 2, max: 4 },
     ],
   },
   fallen_knight: {
-    id: 'fallen_knight', name: '墮落騎士', level: 29, hp: 1550, atk: 32, def: 32, critRate: 0.18, exp: 1600, tier: 'miniboss',
+    id: 'fallen_knight', name: '墮落騎士', level: 29, hp: 2041, atk: 146, def: 32, critRate: 0.18, exp: 2107, tier: 'miniboss',
     physicalResistPct: 0.2, magicResistPct: -0.15, // 一身重鎧:扛物理,但詛咒纏身怕魔法
     ...ENRAGE_DEFAULT,
     chargeSkill: { name: '絕望重劈', telegraphText: '雙手緊握巨劍高舉過頂,散發不祥的氣息!', triggerEveryTurns: 4, dmgMult: 2.5 },
@@ -277,7 +296,7 @@ export const MONSTERS = {
     ],
   },
   king_of_ruins: {
-    id: 'king_of_ruins', name: '遺跡之王', level: 30, hp: 2820, atk: 61, def: 40, critRate: 0.2, exp: 3800, tier: 'boss',
+    id: 'king_of_ruins', name: '遺跡之王', level: 30, hp: 4097, atk: 122, def: 40, critRate: 0.2, exp: 5521, tier: 'boss',
     physicalResistPct: 0.1, magicResistPct: 0.1, // 終極王者:對兩種傷害皆有一定抗性,真正的挑戰在於狂暴與蓄力節奏
     enrageHpPct: 0.35, enrageAtkMult: 1.5,
     chargeSkill: { name: '王座審判', telegraphText: '緩緩起身,王座周圍的遺跡碎石開始漂浮!', triggerEveryTurns: 3, dmgMult: 2.8 },
@@ -288,7 +307,7 @@ export const MONSTERS = {
     ],
   },
   primordial_ruin_overlord: {
-    id: 'primordial_ruin_overlord', name: '太初遺跡神皇', level: 38, hp: 5600, atk: 92, def: 62, critRate: 0.22, exp: 7500, tier: 'trueboss',
+    id: 'primordial_ruin_overlord', name: '太初遺跡神皇', level: 38, hp: 7448, atk: 68, def: 62, critRate: 0.22, exp: 9975, tier: 'trueboss',
     physicalResistPct: 0.2, magicResistPct: 0.2, // 全遊戲最強的存在:對兩種傷害皆有顯著抗性,真正的終極試煉
     enrageHpPct: 0.35, enrageAtkMult: 1.7,
     chargeSkill: { name: '神皇終焉審判', telegraphText: '太初遺跡的碎石盡數浮起,籠罩在令人窒息的絕對威壓之下!', triggerEveryTurns: 2, dmgMult: 3.3 },

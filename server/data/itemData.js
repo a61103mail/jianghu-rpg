@@ -107,20 +107,21 @@ export const ACCESSORY_NAMES = ['護符', '戒指', '項鍊', '徽章'];
 const GEAR_MATERIAL_QTY_BY_MAP = { novice_plains: 5, goblin_forest: 8, stone_mines: 12, dark_swamp: 16, ruined_borderlands: 20 };
 const GEAR_GOLD_BY_MAP = { novice_plains: 30, goblin_forest: 90, stone_mines: 200, dark_swamp: 380, ruined_borderlands: 650 };
 const TIER_STATS = {
-  // accDex(2026/09重新計算,非拍腦袋):DEX是「原始屬性」,會被職業係數放大再進入攻擊力公式
-  // (弓箭手 atk=dex*1.4+str*0.2,DEX對弓箭手是1:1.4的直接攻擊力轉換),但accCritPct是直接的
-  // 戰鬥屬性,不會再被任何係數放大。這代表同一個數字的accDex,對弓箭手而言的「期望傷害增幅」
-  // 遠高於accCritPct——用實際公式算過:原本 ruined_borderlands 的 accDex=78,對Lv30全點敏捷
-  // 弓箭手的期望傷害增幅高達 +35%,但同地圖 accCritPct=13.8 只增幅 +8.3%,兩者本應是「同一階
-  // 飾品的兩種選擇」卻差了4倍以上——這正是使用者實測「菁英2件+最後地圖2件一般飾品」就能打穿
-  // 最終真王的根本原因。修正:用「期望傷害增幅 = accDex*1.4*coeff / (等級基礎值+基準atk*coeff)」
-  // 反推每張地圖的 accDex,讓它對Lv30全點敏捷弓箭手的期望傷害增幅打平accCritPct(約8%),兩個
-  // 選項才是真正對等的取捨,不是「選錯了等於白選」。accCritPct本身數值合理,維持不變。
-  novice_plains: { weaponAtk: 28, armorDef: 20, armorHp: 65, accCritPct: 3, accHp: 38, accDex: 4 },
-  goblin_forest: { weaponAtk: 45, armorDef: 32, armorHp: 104, accCritPct: 4.8, accHp: 61, accDex: 6 },
-  stone_mines: { weaponAtk: 67, armorDef: 48, armorHp: 156, accCritPct: 7.2, accHp: 91, accDex: 10 },
-  dark_swamp: { weaponAtk: 95, armorDef: 68, armorHp: 221, accCritPct: 10.2, accHp: 129, accDex: 14 },
-  ruined_borderlands: { weaponAtk: 129, armorDef: 92, armorHp: 299, accCritPct: 13.8, accHp: 175, accDex: 18 },
+  // accPrimary(2026/09第二次修正,使用者指正:「法師要敏捷幹嘛」):第一次修正只調降了數值,
+  // 但沒發現更根本的問題——四間商店的「第三顆飾品」全部寫死給 dex,對戰士(atk=str*1.4+dex*0.3)、
+  // 盜賊(atk=luk*1.4+dex*0.3)只是次要的小加成,對法師(matk=int*1.5,公式完全不含dex)則是
+  // 100%死屬性,等於法師只有2種真正有用的飾品可選(會心/氣血),敏捷那格形同浪費一個配方格。
+  // 修正:改成「主屬性飾品」,依職業給該職業真正的主屬性(戰士給str/法師給int/盜賊給luk/
+  // 弓箭手仍給dex),數值沿用同一套(見下方),用實際引擎算過:四個職業的主屬性攻擊力係數都在
+  // 1.4~1.5之間(戰士/盜賊/弓箭手=1.4,法師=1.5)、Lv30全點主屬性的基準攻擊力都在222~237
+  // 之間,四個職業套同一套曲線反推出來的「跟accCritPct打平期望傷害增幅」數值幾乎完全一致
+  // (誤差在四捨五入範圍內),因此四職業共用下面這條曲線,只是套用到各自不同的屬性欄位
+  // (見 buildShopRecipes 的 primaryStatKey 參數)。
+  novice_plains: { weaponAtk: 28, armorDef: 20, armorHp: 65, accCritPct: 3, accHp: 38, accPrimary: 4 },
+  goblin_forest: { weaponAtk: 45, armorDef: 32, armorHp: 104, accCritPct: 4.8, accHp: 61, accPrimary: 6 },
+  stone_mines: { weaponAtk: 67, armorDef: 48, armorHp: 156, accCritPct: 7.2, accHp: 91, accPrimary: 10 },
+  dark_swamp: { weaponAtk: 95, armorDef: 68, armorHp: 221, accCritPct: 10.2, accHp: 129, accPrimary: 14 },
+  ruined_borderlands: { weaponAtk: 129, armorDef: 92, armorHp: 299, accCritPct: 13.8, accHp: 175, accPrimary: 18 },
 };
 // 副手五階數值:生存向(氣血/防禦約為防具一半)+ 少量攻擊值(約武器三分之一)。
 // 職業特色屬性各自用途:blockPct(戰士格擋率)、evasionPct(弓箭手迴避率)、critDamagePct(盜賊
@@ -139,10 +140,14 @@ const TIER_NAME_ZH = {
   elite_set: '菁英套裝', trueboss_set: '真王套裝',
 };
 
-// 依商店的攻擊屬性(atk/matk)與部位,組出五個部位×五張地圖共 30 張配方(武器/防具/副手各1張+飾品3張)。
-// 飾品的三張配方(acc1會心向/acc2氣血向/acc3敏捷向)只是「不同屬性傾向的飾品」,不代表三個不同
-// 格子——slot 統一用通用的 accessory,實際要放飾品一或飾品二由玩家裝備時自己選。
-function buildShopRecipes(shopId, atkKey, namesByMap, offhandNamesByMap) {
+// 依商店的攻擊屬性(atk/matk)、主屬性欄位(str/dex/int/luk)與部位,組出五個部位×五張地圖共
+// 30 張配方(武器/防具/副手各1張+飾品3張)。飾品的三張配方(acc1會心向/acc2氣血向/acc3該職業
+// 主屬性向)只是「不同屬性傾向的飾品」,不代表三個不同格子——slot 統一用通用的 accessory,
+// 實際要放飾品一或飾品二由玩家裝備時自己選。
+// primaryStatKey(2026/09新增):acc3 原本不分職業一律給 dex,對法師(matk公式完全不含dex)
+// 形同死屬性、對戰士/盜賊也只是次要小加成——現在依職業給該職業真正的主屬性(str/int/luk/dex),
+// 確保每個職業的第三顆飾品都是有意義的選擇,不會有人被迫多出一顆「怎麼選都是浪費」的飾品格。
+function buildShopRecipes(shopId, atkKey, primaryStatKey, namesByMap, offhandNamesByMap) {
   const recipes = [];
   const isMage = shopId === 'magic';
   const isArcher = shopId === 'leather';
@@ -168,25 +173,25 @@ function buildShopRecipes(shopId, atkKey, namesByMap, offhandNamesByMap) {
     recipes.push({ id: `${shopId}_offhand_${mapId}`, name: offhandNamesByMap[mapId], slot: 'offhand', tier: mapId, gold, materials, statBonus: offhandStatBonus });
     recipes.push({ id: `${shopId}_accessory1_${mapId}`, name: n.acc1, slot: 'accessory', tier: mapId, gold, materials, statBonus: { critRatePct: s.accCritPct } });
     recipes.push({ id: `${shopId}_accessory2_${mapId}`, name: n.acc2, slot: 'accessory', tier: mapId, gold, materials, statBonus: { hp: s.accHp } });
-    recipes.push({ id: `${shopId}_accessory3_${mapId}`, name: n.acc3, slot: 'accessory', tier: mapId, gold, materials, statBonus: { dex: s.accDex } });
+    recipes.push({ id: `${shopId}_accessory3_${mapId}`, name: n.acc3, slot: 'accessory', tier: mapId, gold, materials, statBonus: { [primaryStatKey]: s.accPrimary } });
   });
   return recipes;
 }
 
 export const RARE_RECIPES = {
   blacksmith: buildShopRecipes(
-    'blacksmith', 'atk',
+    'blacksmith', 'atk', 'str',
     {
-      novice_plains: { weapon: '精鐵劍', armor: '精鐵鎧甲', acc1: '精鐵護符', acc2: '力量護腕', acc3: '精鐵敏捷環' },
-      goblin_forest: { weapon: '哥布林戰斧', armor: '哥布林鎧甲', acc1: '哥布林牙墜', acc2: '蠻力腰帶', acc3: '疾風牙墜' },
-      stone_mines: { weapon: '磐岩巨劍', armor: '磐岩重甲', acc1: '磐岩戒', acc2: '巨力腰帶', acc3: '磐岩敏捷環' },
-      dark_swamp: { weapon: '沼澤蝕鋼劍', armor: '沼澤蝕鋼甲', acc1: '蝕鋼戒', acc2: '蝕鋼腰帶', acc3: '沼澤疾影環' },
-      ruined_borderlands: { weapon: '遺跡王者劍', armor: '遺跡王者鎧', acc1: '王者戒', acc2: '王者護環', acc3: '王者疾影環' },
+      novice_plains: { weapon: '精鐵劍', armor: '精鐵鎧甲', acc1: '精鐵護符', acc2: '力量護腕', acc3: '精鐵蠻力環' },
+      goblin_forest: { weapon: '哥布林戰斧', armor: '哥布林鎧甲', acc1: '哥布林牙墜', acc2: '蠻力腰帶', acc3: '哥布林巨力墜' },
+      stone_mines: { weapon: '磐岩巨劍', armor: '磐岩重甲', acc1: '磐岩戒', acc2: '巨力腰帶', acc3: '磐岩蠻力環' },
+      dark_swamp: { weapon: '沼澤蝕鋼劍', armor: '沼澤蝕鋼甲', acc1: '蝕鋼戒', acc2: '蝕鋼腰帶', acc3: '沼澤蠻力環' },
+      ruined_borderlands: { weapon: '遺跡王者劍', armor: '遺跡王者鎧', acc1: '王者戒', acc2: '王者護環', acc3: '王者蠻力環' },
     },
     { novice_plains: '精鐵小圓盾', goblin_forest: '哥布林戰盾', stone_mines: '磐岩塔盾', dark_swamp: '沼澤蝕鋼盾', ruined_borderlands: '遺跡王者盾' }
   ),
   leather: buildShopRecipes(
-    'leather', 'atk',
+    'leather', 'atk', 'dex',
     {
       novice_plains: { weapon: '硬化短弓', armor: '硬化皮甲', acc1: '羽紋護符', acc2: '敏捷手環', acc3: '疾行足環' },
       goblin_forest: { weapon: '哥布林獵弓', armor: '哥布林皮甲', acc1: '哥布林徽記戒', acc2: '迅捷腰帶', acc3: '獵風之靴' },
@@ -197,24 +202,24 @@ export const RARE_RECIPES = {
     { novice_plains: '硬化箭袋', goblin_forest: '哥布林強化弓弦', stone_mines: '磐岩強化箭袋', dark_swamp: '沼澤毒牙箭袋', ruined_borderlands: '遺跡遊俠箭袋' }
   ),
   magic: buildShopRecipes(
-    'magic', 'matk',
+    'magic', 'matk', 'int',
     {
-      novice_plains: { weapon: '木杖', armor: '學徒法袍', acc1: '碎晶護符', acc2: '魔力手環', acc3: '碎晶敏捷戒' },
-      goblin_forest: { weapon: '哥布林法杖', armor: '哥布林法袍', acc1: '秘紋戒', acc2: '秘紋腰帶', acc3: '秘紋迅步環' },
-      stone_mines: { weapon: '磐岩法杖', armor: '磐岩法袍', acc1: '磐岩秘紋戒', acc2: '磐岩魔力環', acc3: '磐岩迅步環' },
-      dark_swamp: { weapon: '沼澤邪杖', armor: '沼澤邪袍', acc1: '邪紋戒', acc2: '沼澤魔力環', acc3: '沼澤迅影環' },
-      ruined_borderlands: { weapon: '遺跡神皇杖', armor: '遺跡神皇袍', acc1: '神皇秘紋戒', acc2: '神皇魔力環', acc3: '神皇迅影靴' },
+      novice_plains: { weapon: '木杖', armor: '學徒法袍', acc1: '碎晶護符', acc2: '魔力手環', acc3: '碎晶智慧戒' },
+      goblin_forest: { weapon: '哥布林法杖', armor: '哥布林法袍', acc1: '秘紋戒', acc2: '秘紋腰帶', acc3: '秘紋智慧環' },
+      stone_mines: { weapon: '磐岩法杖', armor: '磐岩法袍', acc1: '磐岩秘紋戒', acc2: '磐岩魔力環', acc3: '磐岩智慧環' },
+      dark_swamp: { weapon: '沼澤邪杖', armor: '沼澤邪袍', acc1: '邪紋戒', acc2: '沼澤魔力環', acc3: '沼澤智慧環' },
+      ruined_borderlands: { weapon: '遺跡神皇杖', armor: '遺跡神皇袍', acc1: '神皇秘紋戒', acc2: '神皇魔力環', acc3: '神皇智慧環' },
     },
     { novice_plains: '魔導書副冊', goblin_forest: '哥布林秘紋法印', stone_mines: '磐岩秘紋法印', dark_swamp: '沼澤邪紋法印', ruined_borderlands: '神皇奧術聖典' }
   ),
   church: buildShopRecipes(
-    'church', 'atk',
+    'church', 'atk', 'luk',
     {
-      novice_plains: { weapon: '淬毒匕首', armor: '夜行輕甲', acc1: '暗影護符', acc2: '敏捷手環', acc3: '暗影疾行環' },
-      goblin_forest: { weapon: '哥布林淬毒爪', armor: '哥布林夜行服', acc1: '哥布林暗影戒', acc2: '夜行腰帶', acc3: '夜行疾影環' },
-      stone_mines: { weapon: '磐岩淬毒爪', armor: '磐岩夜行服', acc1: '磐岩暗影戒', acc2: '磐岩夜行環', acc3: '磐岩疾影靴' },
-      dark_swamp: { weapon: '沼澤淬毒爪', armor: '沼澤夜行服', acc1: '沼澤暗影戒', acc2: '沼澤夜行環', acc3: '沼澤疾影靴' },
-      ruined_borderlands: { weapon: '遺跡噬魂爪', armor: '遺跡夜行服', acc1: '暗影王冠戒', acc2: '王冠疾影環', acc3: '王冠無聲靴' },
+      novice_plains: { weapon: '淬毒匕首', armor: '夜行輕甲', acc1: '暗影護符', acc2: '敏捷手環', acc3: '暗影幸運環' },
+      goblin_forest: { weapon: '哥布林淬毒爪', armor: '哥布林夜行服', acc1: '哥布林暗影戒', acc2: '夜行腰帶', acc3: '夜行幸運墜' },
+      stone_mines: { weapon: '磐岩淬毒爪', armor: '磐岩夜行服', acc1: '磐岩暗影戒', acc2: '磐岩夜行環', acc3: '磐岩幸運環' },
+      dark_swamp: { weapon: '沼澤淬毒爪', armor: '沼澤夜行服', acc1: '沼澤暗影戒', acc2: '沼澤夜行環', acc3: '沼澤幸運環' },
+      ruined_borderlands: { weapon: '遺跡噬魂爪', armor: '遺跡夜行服', acc1: '暗影王冠戒', acc2: '王冠疾影環', acc3: '王冠幸運環' },
     },
     { novice_plains: '淬毒暗器囊', goblin_forest: '哥布林毒囊', stone_mines: '磐岩毒囊', dark_swamp: '沼澤劇毒囊', ruined_borderlands: '死神低語' }
   ),

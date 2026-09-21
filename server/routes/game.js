@@ -957,8 +957,10 @@ export default function gameRoutes() {
     res.json({ shop, recipes, setRecipes });
   });
 
-  // 雜貨店回收:賣雜物/一般素材/稀有素材(是否留著製作或賣錢由玩家自行決定)或賣掉背包中的普通裝備
-  // (稀有/超稀有裝備不可直接賣店,只能上架交易所)
+  // 雜貨店回收:賣雜物/一般素材/稀有素材(是否留著製作或賣錢由玩家自行決定)或賣掉背包中的裝備
+  // (只有菁英/真王套裝不可直接賣店,只能上架交易所——套裝材料需要打贏王才有機會取得,數量有限、
+  // 真的有「賣給其他玩家」的價值。基本裝備(tier為地圖id)只要材料+金幣就能無限量產,直接賣店
+  // 換錢才合理,逼玩家把重複打造出來的基本裝備硬塞去交易所上架,不會有人買、只會卡在背包裡出不去)。
   router.post('/shop/sell', async (req, res) => {
     const { itemId, qty, inventoryItemId } = req.body || {};
     const save = await loadSave(req.user.userId);
@@ -966,7 +968,8 @@ export default function gameRoutes() {
       const idx = save.inventory.findIndex((i) => i.id === inventoryItemId);
       if (idx === -1) return res.status(404).json({ error: '背包內找不到該物品' });
       const item = save.inventory[idx];
-      if (item.tier !== 'common') return res.status(400).json({ error: '非普通裝備無法直接賣給商店,請上架交易所' });
+      const isSetGear = item.tier === 'elite_set' || item.tier === 'trueboss_set';
+      if (isSetGear) return res.status(400).json({ error: '菁英/真王套裝無法直接賣給商店,請上架交易所' });
       const price = item.itemLevel * 2;
       save.inventory.splice(idx, 1);
       save.gold += price;

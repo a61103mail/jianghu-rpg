@@ -1039,12 +1039,15 @@ function renderInventory() {
           s.equipment.accessory2 ? renderStatDiff('比飾品二', diffItemStats(item.stats, s.equipment.accessory2.stats)) : null,
         ]
       : [s.equipment[item.slot] ? renderStatDiff('比目前裝備', diffItemStats(item.stats, s.equipment[item.slot].stats)) : null];
+    // 只有菁英/真王套裝(tier為elite_set/trueboss_set)不能直接賣店,其餘(common隨機掉落 +
+    // 地圖id的基本裝備,材料可無限量產)都能直接賣給商店換錢,見 game.js /shop/sell 的判斷。
+    const isSetGear = item.tier === 'elite_set' || item.tier === 'trueboss_set';
     return h('div', { class: `item-card rarity-${item.tier}` }, [
       itemLabel(item),
       ...compareRows,
       h('div', { style: 'margin-top:4px;' }, [
         ...equipButtons,
-        item.tier === 'common' ? h('button', { class: 'btn', onclick: async () => { try { const r = await api.sellGear(item.id); S.error = `賣出獲得 ${r.earned} 金幣`; S.state = r.state; render(); } catch (e) { S.error = e.message; render(); } } }, '賣給商店') : null,
+        !isSetGear ? h('button', { class: 'btn', onclick: async () => { try { const r = await api.sellGear(item.id); S.error = `賣出獲得 ${r.earned} 金幣`; S.state = r.state; render(); } catch (e) { S.error = e.message; render(); } } }, '賣給商店') : null,
         h('input', { type: 'number', id: `price-${item.id}`, placeholder: '開價', style: 'width:80px;display:inline-block;margin:0 4px;' }),
         h('button', {
           class: 'btn',
